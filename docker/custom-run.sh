@@ -26,7 +26,18 @@ JAVA_SYS_PROPS="$JAVA_SYS_PROPS -Dorg.ice4j.ice.harvest.USE_LINK_LOCAL_ADDRESSES
 DAEMON=/usr/share/jigasi/jigasi.sh
 DAEMON_OPTS="--nocomponent=true --configdir=/ --configdirname=config --min-port=${JIGASI_PORT_MIN:-20000} --max-port=${JIGASI_PORT_MAX:-20050}"
 
-JIGASI_CMD="JAVA_SYS_PROPS=\"$JAVA_SYS_PROPS\" exec $DAEMON $DAEMON_OPTS"
-[ -n "$JIGASI_LOG_FILE" ] && JIGASI_CMD="$JIGASI_CMD 2>&1 | tee $JIGASI_LOG_FILE"
+# Export JAVA_SYS_PROPS so jigasi.sh can use it
+export JAVA_SYS_PROPS
 
-exec s6-setuidgid jigasi /bin/bash -c "$JIGASI_CMD"
+# Log the ice4j configuration for debugging
+echo "ICE4J Configuration:"
+echo "  ALLOWED_ADDRESSES: ${ICE4J_ALLOWED}"
+echo "  BLOCKED_ADDRESSES: ${ICE4J_BLOCKED}"
+echo "  JAVA_SYS_PROPS: ${JAVA_SYS_PROPS}"
+
+# Run jigasi with s6-setuidgid (drops to jigasi user)
+if [ -n "$JIGASI_LOG_FILE" ]; then
+    exec s6-setuidgid jigasi $DAEMON $DAEMON_OPTS 2>&1 | tee $JIGASI_LOG_FILE
+else
+    exec s6-setuidgid jigasi $DAEMON $DAEMON_OPTS
+fi
