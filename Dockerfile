@@ -26,6 +26,14 @@ FROM jitsi/jigasi:stable-9823
 # The jar-with-dependencies includes all required libraries
 COPY --from=builder /build/target/jigasi-*-jar-with-dependencies.jar /usr/share/jigasi/jigasi.jar
 
+# Copy custom run script with ice4j configuration
+# This restricts ICE candidates to block Docker bridge IPs
+# Environment variables:
+#   ICE4J_ALLOWED_ADDRESSES - Semicolon-separated list of allowed IPs (default: auto-detect)
+#   ICE4J_BLOCKED_ADDRESSES - Semicolon-separated list of blocked IPs (default: Docker bridges)
+COPY docker/custom-run.sh /etc/services.d/jigasi/run
+RUN chmod +x /etc/services.d/jigasi/run
+
 # Labels
 LABEL org.opencontainers.image.title="AIQLick Custom Jigasi"
 LABEL org.opencontainers.image.description="Jigasi with user_id in transcription header"
