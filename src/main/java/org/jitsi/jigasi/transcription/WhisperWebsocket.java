@@ -439,10 +439,19 @@ public class WhisperWebsocket
 
     private ByteBuffer buildPayload(String participantId, Participant participant, ByteBuffer audio)
     {
-        ByteBuffer header = ByteBuffer.allocate(60);
+        ByteBuffer header = ByteBuffer.allocate(120);  // Increased from 60 to 120 for user_id
         int lenAudio = audio.remaining();
-        ByteBuffer fullPayload = ByteBuffer.allocate(lenAudio + 60);
-        String headerStr = participantId + "|" + this.getLanguage(participant);
+        ByteBuffer fullPayload = ByteBuffer.allocate(lenAudio + 120);
+
+        // Get user_id from JWT identity (may be null)
+        String userId = participant.getIdentityUserId();
+        if (userId == null)
+        {
+            userId = "";
+        }
+
+        // New format: participantId|language|userId
+        String headerStr = participantId + "|" + this.getLanguage(participant) + "|" + userId;
         header.put(headerStr.getBytes()).rewind();
         fullPayload.put(header).put(audio).rewind();
         return fullPayload;
