@@ -23,8 +23,8 @@ RUN mvn package -DskipTests -Dassembly.skipAssembly=false
 FROM jitsi/jigasi:stable-9823
 
 # Copy custom JAR over official one
-# The jar-with-dependencies includes all required libraries
-COPY --from=builder /build/target/jigasi-*-jar-with-dependencies.jar /usr/share/jigasi/jigasi.jar
+# The base image already has dependencies in /usr/share/jigasi/lib/
+COPY --from=builder /build/target/jigasi-1.1-SNAPSHOT.jar /usr/share/jigasi/jigasi.jar
 
 # Copy custom run script with ice4j configuration
 # This restricts ICE candidates to block Docker bridge IPs
