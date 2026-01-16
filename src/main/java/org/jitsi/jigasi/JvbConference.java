@@ -33,6 +33,7 @@ import org.jitsi.jigasi.stats.*;
 import org.jitsi.jigasi.util.*;
 import org.jitsi.jigasi.version.*;
 import org.jitsi.jigasi.visitor.*;
+import org.jitsi.jigasi.xmpp.*;
 import org.jitsi.jigasi.xmpp.extensions.*;
 import org.jitsi.utils.*;
 import org.jitsi.utils.logging2.*;
@@ -69,6 +70,7 @@ import java.io.*;
 import java.net.*;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.regex.*;
 
 import static net.java.sip.communicator.service.protocol.event.LocalUserChatRoomPresenceChangeEvent.*;
 import static org.jivesoftware.smack.packet.StanzaError.Condition.*;
@@ -175,6 +177,17 @@ public class JvbConference
      * The websocket client to connect to visitors queue if configured.
      */
     private WebsocketClient websocketClient;
+
+    /**
+     * The Colibri WebSocket client for EndpointMessageTransport with JVB.
+     * This is required for JVB to forward audio to the transcriber.
+     */
+    private ColibriWebSocketClient colibriWebSocketClient;
+
+    /**
+     * The Colibri WebSocket URL extracted from the Jingle session-initiate.
+     */
+    private String colibriWebSocketUrl;
 
     /**
      * A timer which will be used to schedule a quick non-blocking check whether there is any activity
@@ -332,6 +345,11 @@ public class JvbConference
      */
     private final JvbCallChangeListener callChangeListener
         = new JvbCallChangeListener();
+
+    /**
+     * Listener for Jingle session-initiate to extract Colibri WebSocket URL.
+     */
+    private StanzaListener jingleStanzaListener;
 
     /**
      * <tt>ProtocolProviderFactory</tt> instance used to manage XMPP accounts.
@@ -697,6 +715,10 @@ public class JvbConference
             this.websocketClient.disconnect();
         }
 
+        // Cleanup Colibri WebSocket and Jingle listener
+        disconnectColibriWebSocket();
+        unregisterJingleStanzaListener();
+
         if (jvbCall != null)
         {
             CallManager.hangupCall(jvbCall, true);
@@ -787,6 +809,9 @@ public class JvbConference
         if (started && mucRoom == null && evt.getNewState() == RegistrationState.REGISTERED)
         {
             discoverComponentAddresses();
+
+            // Add Jingle stanza listener to extract Colibri WebSocket URL before joining
+            registerJingleStanzaListener();
 
             // Join the MUC
             joinConferenceRoom();
@@ -1806,6 +1831,9 @@ public class JvbConference
                 logger.info("JVB conference call IN_PROGRESS.");
                 gatewaySession.onJvbCallEstablished();
 
+                // Connect to Colibri WebSocket for EndpointMessageTransport (required for JVB audio forwarding)
+                connectColibriWebSocket();
+
                 AudioModeration avMod = JvbConference.this.getAudioModeration();
                 if (avMod != null)
                 {
@@ -2159,6 +2187,182 @@ public class JvbConference
         }
 
         return null;
+    }
+
+    /**
+     * Registers a stanza listener to intercept Jingle session-initiate and extract
+     * the Colibri WebSocket URL from the transport extension.
+     */
+    private void registerJingleStanzaListener()
+    {
+        XMPPConnection connection = getConnection();
+        if (connection == null)
+        {
+            logger.warn("Cannot register Jingle stanza listener - no connection");
+            return;
+        }
+
+        // Only register for transcriber mode
+        if (!this.isTranscriber)
+        {
+            return;
+        }
+
+        jingleStanzaListener = stanza ->
+        {
+            if (stanza instanceof IQ)
+            {
+                IQ iq = (IQ) stanza;
+                // Look for Jingle session-initiate IQ
+                if (iq.getType() == IQ.Type.set)
+                {
+                    String xml = iq.toXML().toString();
+                    if (xml.contains("jingle") && xml.contains("session-initiate"))
+                    {
+                        extractColibriWebSocketUrl(xml);
+                    }
+                }
+            }
+        };
+
+        // Filter for IQ stanzas of type "set"
+        StanzaFilter filter = new StanzaTypeFilter(IQ.class);
+        connection.addAsyncStanzaListener(jingleStanzaListener, filter);
+
+        logger.info("Registered Jingle stanza listener for Colibri WebSocket URL extraction");
+    }
+
+    /**
+     * Unregisters the Jingle stanza listener.
+     */
+    private void unregisterJingleStanzaListener()
+    {
+        if (jingleStanzaListener != null)
+        {
+            XMPPConnection connection = getConnection();
+            if (connection != null)
+            {
+                connection.removeAsyncStanzaListener(jingleStanzaListener);
+            }
+            jingleStanzaListener = null;
+        }
+    }
+
+    /**
+     * Extracts the Colibri WebSocket URL from a Jingle session-initiate IQ XML.
+     * The URL is in a web-socket element with namespace http://jitsi.org/protocol/colibri.
+     *
+     * @param xml The raw XML of the Jingle IQ
+     */
+    private void extractColibriWebSocketUrl(String xml)
+    {
+        // Look for: <web-socket xmlns='http://jitsi.org/protocol/colibri' url='...'/>
+        // or: <web-socket xmlns="http://jitsi.org/protocol/colibri" url="..."/>
+        Pattern pattern = Pattern.compile(
+            "<web-socket[^>]*xmlns=['\"]http://jitsi.org/protocol/colibri['\"][^>]*url=['\"]([^'\"]+)['\"]",
+            Pattern.CASE_INSENSITIVE
+        );
+
+        Matcher matcher = pattern.matcher(xml);
+        if (matcher.find())
+        {
+            String url = matcher.group(1);
+            // Unescape XML entities
+            url = url.replace("&amp;", "&");
+            this.colibriWebSocketUrl = url;
+            logger.info("Extracted Colibri WebSocket URL: " + url);
+        }
+        else
+        {
+            // Try alternative pattern where url comes before xmlns
+            Pattern altPattern = Pattern.compile(
+                "<web-socket[^>]*url=['\"]([^'\"]+)['\"][^>]*xmlns=['\"]http://jitsi.org/protocol/colibri['\"]",
+                Pattern.CASE_INSENSITIVE
+            );
+            Matcher altMatcher = altPattern.matcher(xml);
+            if (altMatcher.find())
+            {
+                String url = altMatcher.group(1);
+                url = url.replace("&amp;", "&");
+                this.colibriWebSocketUrl = url;
+                logger.info("Extracted Colibri WebSocket URL (alt pattern): " + url);
+            }
+            else
+            {
+                logger.warn("Could not extract Colibri WebSocket URL from Jingle IQ");
+                if (logger.isDebugEnabled())
+                {
+                    logger.debug("Jingle IQ XML: " + xml);
+                }
+            }
+        }
+    }
+
+    /**
+     * Connects to the Colibri WebSocket for EndpointMessageTransport.
+     * This is required for JVB to forward audio to the transcriber.
+     */
+    private void connectColibriWebSocket()
+    {
+        if (!this.isTranscriber)
+        {
+            return;
+        }
+
+        if (this.colibriWebSocketUrl == null || this.colibriWebSocketUrl.isEmpty())
+        {
+            logger.warn("No Colibri WebSocket URL available, JVB may not forward audio");
+            return;
+        }
+
+        if (this.colibriWebSocketClient != null && this.colibriWebSocketClient.isConnected())
+        {
+            logger.info("Colibri WebSocket already connected");
+            return;
+        }
+
+        // Get endpoint ID from our resource
+        String endpointId = "unknown";
+        if (this.xmppProvider instanceof ProtocolProviderServiceJabberImpl)
+        {
+            Jid ourJid = ((ProtocolProviderServiceJabberImpl) this.xmppProvider)
+                .getOurJID();
+            if (ourJid != null && ourJid.hasResource())
+            {
+                endpointId = ourJid.getResourceOrEmpty().toString();
+            }
+        }
+
+        logger.info("Connecting to Colibri WebSocket for transcriber endpoint: " + endpointId);
+
+        this.colibriWebSocketClient = new ColibriWebSocketClient(
+            this.colibriWebSocketUrl,
+            endpointId,
+            logger
+        );
+
+        boolean connected = this.colibriWebSocketClient.connect();
+        if (connected)
+        {
+            logger.info("Successfully connected to Colibri WebSocket for EndpointMessageTransport");
+        }
+        else
+        {
+            logger.error("Failed to connect to Colibri WebSocket - JVB may not forward audio to transcriber");
+        }
+    }
+
+    /**
+     * Disconnects from the Colibri WebSocket.
+     */
+    private void disconnectColibriWebSocket()
+    {
+        if (this.colibriWebSocketClient != null)
+        {
+            this.colibriWebSocketClient.disconnect();
+            this.colibriWebSocketClient = null;
+        }
+        this.colibriWebSocketUrl = null;
     }
 
     /**
