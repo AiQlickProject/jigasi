@@ -2213,13 +2213,19 @@ public class JvbConference
             if (stanza instanceof IQ)
             {
                 IQ iq = (IQ) stanza;
-                // Look for Jingle session-initiate IQ
+                // Look for Jingle session-initiate or transport-info IQ
                 if (iq.getType() == IQ.Type.set)
                 {
                     String xml = iq.toXML().toString();
-                    if (xml.contains("jingle") && xml.contains("session-initiate"))
+                    // Check both session-initiate and transport-info for WebSocket URL
+                    // Jicofo may send the URL in either message
+                    if (xml.contains("jingle") &&
+                        (xml.contains("session-initiate") || xml.contains("transport-info")))
                     {
-                        extractColibriWebSocketUrl(xml);
+                        if (this.colibriWebSocketUrl == null)
+                        {
+                            extractColibriWebSocketUrl(xml);
+                        }
                     }
                 }
             }
@@ -2249,8 +2255,9 @@ public class JvbConference
     }
 
     /**
-     * Extracts the Colibri WebSocket URL from a Jingle session-initiate IQ XML.
+     * Extracts the Colibri WebSocket URL from a Jingle session-initiate or transport-info IQ XML.
      * The URL is in a web-socket element with namespace http://jitsi.org/protocol/colibri.
+     * If the call is already in progress, attempts to connect immediately.
      *
      * @param xml The raw XML of the Jingle IQ
      */
@@ -2263,14 +2270,11 @@ public class JvbConference
             Pattern.CASE_INSENSITIVE
         );
 
+        String extractedUrl = null;
         Matcher matcher = pattern.matcher(xml);
         if (matcher.find())
         {
-            String url = matcher.group(1);
-            // Unescape XML entities
-            url = url.replace("&amp;", "&");
-            this.colibriWebSocketUrl = url;
-            logger.info("Extracted Colibri WebSocket URL: " + url);
+            extractedUrl = matcher.group(1);
         }
         else
         {
@@ -2282,14 +2286,31 @@ public class JvbConference
             Matcher altMatcher = altPattern.matcher(xml);
             if (altMatcher.find())
             {
-                String url = altMatcher.group(1);
-                url = url.replace("&amp;", "&");
-                this.colibriWebSocketUrl = url;
-                logger.info("Extracted Colibri WebSocket URL (alt pattern): " + url);
+                extractedUrl = altMatcher.group(1);
             }
-            else
+        }
+
+        if (extractedUrl != null)
+        {
+            // Unescape XML entities
+            extractedUrl = extractedUrl.replace("&amp;", "&");
+            this.colibriWebSocketUrl = extractedUrl;
+            logger.info("Extracted Colibri WebSocket URL: " + extractedUrl);
+
+            // If call is already in progress, try to connect now
+            // (URL may have arrived in transport-info after session started)
+            if (this.jvbCall != null && this.colibriWebSocketClient == null)
             {
-                logger.warn("Could not extract Colibri WebSocket URL from Jingle IQ");
+                logger.info("Call already in progress, attempting late Colibri WebSocket connection");
+                connectColibriWebSocket();
+            }
+        }
+        else
+        {
+            // Only warn if we don't already have a URL
+            if (this.colibriWebSocketUrl == null)
+            {
+                logger.debug("No Colibri WebSocket URL found in Jingle IQ");
                 if (logger.isDebugEnabled())
                 {
                     logger.debug("Jingle IQ XML: " + xml);
