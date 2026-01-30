@@ -1,7 +1,62 @@
 #!/usr/bin/with-contenv bash
-# Custom Jigasi run script with ice4j configuration
-# This script configures ICE candidates to restrict Docker bridge IPs
+# Custom Jigasi run script with ice4j and transcription configuration
+# This script configures ICE candidates and transcription settings
 
+# ==============================================================================
+# TRANSCRIPTION CONFIGURATION
+# ==============================================================================
+# Write transcription properties to sip-communicator.properties
+# These must be in the properties file as ConfigurationService reads from there
+
+SIP_PROPS="/config/sip-communicator.properties"
+
+# Function to set property in sip-communicator.properties
+set_prop() {
+    local key="$1"
+    local value="$2"
+    if grep -q "^${key}=" "$SIP_PROPS" 2>/dev/null; then
+        sed -i "s|^${key}=.*|${key}=${value}|" "$SIP_PROPS"
+    else
+        echo "${key}=${value}" >> "$SIP_PROPS"
+    fi
+}
+
+# Enable transcription if JIGASI_ENABLE_TRANSCRIPTION is set
+if [ -n "$JIGASI_ENABLE_TRANSCRIPTION" ] && [ "$JIGASI_ENABLE_TRANSCRIPTION" = "true" ]; then
+    echo "Enabling transcription mode..."
+    set_prop "org.jitsi.jigasi.ENABLE_TRANSCRIPTION" "true"
+    set_prop "org.jitsi.jigasi.ENABLE_SIP" "false"
+
+    # Set custom transcription service (WhisperTranscriptionService)
+    if [ -n "$JIGASI_TRANSCRIPTION_SERVICE" ]; then
+        set_prop "org.jitsi.jigasi.transcription.customService" "$JIGASI_TRANSCRIPTION_SERVICE"
+    else
+        set_prop "org.jitsi.jigasi.transcription.customService" "org.jitsi.jigasi.transcription.WhisperTranscriptionService"
+    fi
+
+    # Set Whisper WebSocket URL
+    if [ -n "$JIGASI_WHISPER_WEBSOCKET_URL" ]; then
+        set_prop "org.jitsi.jigasi.transcription.whisper.websocket_url" "$JIGASI_WHISPER_WEBSOCKET_URL"
+    fi
+
+    # Optional: JWT settings for authenticated Whisper service
+    if [ -n "$JIGASI_WHISPER_PRIVATE_KEY" ]; then
+        set_prop "org.jitsi.jigasi.transcription.whisper.private_key" "$JIGASI_WHISPER_PRIVATE_KEY"
+    fi
+    if [ -n "$JIGASI_WHISPER_PRIVATE_KEY_NAME" ]; then
+        set_prop "org.jitsi.jigasi.transcription.whisper.private_key_name" "$JIGASI_WHISPER_PRIVATE_KEY_NAME"
+    fi
+    if [ -n "$JIGASI_WHISPER_JWT_AUDIENCE" ]; then
+        set_prop "org.jitsi.jigasi.transcription.whisper.jwt_audience" "$JIGASI_WHISPER_JWT_AUDIENCE"
+    fi
+
+    echo "Transcription configuration:"
+    grep -E "^org.jitsi.jigasi.(ENABLE_|transcription)" "$SIP_PROPS" 2>/dev/null || true
+fi
+
+# ==============================================================================
+# ICE4J CONFIGURATION
+# ==============================================================================
 # Configure ice4j via Java system properties
 # HOCON -Dconfig.file doesn't work because JitsiConfig.useDebugNewConfig() replaces it
 # Using org.ice4j.ice.harvest.* legacy properties which are read directly by ice4j

@@ -26,11 +26,17 @@ FROM jitsi/jigasi:stable-9823
 # The base image already has dependencies in /usr/share/jigasi/lib/
 COPY --from=builder /build/target/jigasi-1.1-SNAPSHOT.jar /usr/share/jigasi/jigasi.jar
 
-# Copy custom run script with ice4j configuration
-# This restricts ICE candidates to block Docker bridge IPs
-# Environment variables:
+# Copy custom run script with ice4j and transcription configuration
+# Environment variables for ICE4J:
 #   ICE4J_ALLOWED_ADDRESSES - Semicolon-separated list of allowed IPs (default: auto-detect)
 #   ICE4J_BLOCKED_ADDRESSES - Semicolon-separated list of blocked IPs (default: Docker bridges)
+# Environment variables for Transcription:
+#   JIGASI_ENABLE_TRANSCRIPTION - Set to "true" to enable transcription mode (disables SIP)
+#   JIGASI_TRANSCRIPTION_SERVICE - Custom transcription service class (default: WhisperTranscriptionService)
+#   JIGASI_WHISPER_WEBSOCKET_URL - WebSocket URL for Whisper service (e.g., wss://ai.aiqlick.com/transcription/ws)
+#   JIGASI_WHISPER_PRIVATE_KEY - Base64 encoded private key for JWT auth (optional)
+#   JIGASI_WHISPER_PRIVATE_KEY_NAME - Private key name for JWT auth (optional)
+#   JIGASI_WHISPER_JWT_AUDIENCE - JWT audience (optional, default: jitsi)
 COPY docker/custom-run.sh /etc/services.d/jigasi/run
 RUN chmod +x /etc/services.d/jigasi/run
 
