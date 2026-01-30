@@ -64,16 +64,46 @@ fi
 
 JAVA_SYS_PROPS="-Djava.util.logging.config.file=/config/logging.properties"
 
-# ICE allowed addresses - restrict to host LAN IP only
-# This prevents Docker bridge IPs from being advertised as ICE candidates
-# Override with ICE4J_ALLOWED_ADDRESSES environment variable if needed
-ICE4J_ALLOWED="${ICE4J_ALLOWED_ADDRESSES:-192.168.1.250}"
-JAVA_SYS_PROPS="$JAVA_SYS_PROPS -Dorg.ice4j.ice.harvest.ALLOWED_ADDRESSES=${ICE4J_ALLOWED}"
+# Auto-detect local IP if not set (for EC2/cloud deployments)
+if [ -z "$ICE4J_LOCAL_ADDRESS" ]; then
+    # Try to get the primary non-docker IP
+    ICE4J_LOCAL_ADDRESS=$(ip route get 8.8.8.8 2>/dev/null | grep -oP 'src \K[0-9.]+' || hostname -I | awk '{print $1}')
+fi
 
-# ICE blocked addresses - block Docker bridges and k3s pod network
-# These are internal IPs that JVB cannot reach
-ICE4J_BLOCKED="${ICE4J_BLOCKED_ADDRESSES:-172.17.0.1;172.18.0.1;172.19.0.1;172.20.0.1;172.21.0.1;172.22.0.1;172.23.0.1;10.42.0.1}"
-JAVA_SYS_PROPS="$JAVA_SYS_PROPS -Dorg.ice4j.ice.harvest.BLOCKED_ADDRESSES=${ICE4J_BLOCKED}"
+# Auto-detect public IP if not set (for EC2 instances)
+if [ -z "$ICE4J_PUBLIC_ADDRESS" ]; then
+    # Try EC2 metadata first, then external service
+    ICE4J_PUBLIC_ADDRESS=$(curl -s --connect-timeout 2 http://169.254.169.254/latest/meta-data/public-ipv4 2>/dev/null || \
+                           curl -s --connect-timeout 2 https://checkip.amazonaws.com 2>/dev/null || \
+                           echo "")
+fi
+
+# NAT Harvester configuration (required for EC2/cloud behind NAT)
+if [ -n "$ICE4J_LOCAL_ADDRESS" ] && [ -n "$ICE4J_PUBLIC_ADDRESS" ]; then
+    echo "Configuring NAT Harvester: local=$ICE4J_LOCAL_ADDRESS public=$ICE4J_PUBLIC_ADDRESS"
+    JAVA_SYS_PROPS="$JAVA_SYS_PROPS -Dorg.ice4j.ice.harvest.NAT_HARVESTER_LOCAL_ADDRESS=${ICE4J_LOCAL_ADDRESS}"
+    JAVA_SYS_PROPS="$JAVA_SYS_PROPS -Dorg.ice4j.ice.harvest.NAT_HARVESTER_PUBLIC_ADDRESS=${ICE4J_PUBLIC_ADDRESS}"
+fi
+
+# Allowed interfaces - use specific interface name (e.g., eth0, ens5) for reliable binding
+# For EC2: typically ens5 or eth0. For Docker host mode, use the host's primary interface.
+if [ -n "$ICE4J_ALLOWED_INTERFACES" ]; then
+    JAVA_SYS_PROPS="$JAVA_SYS_PROPS -Dorg.ice4j.ice.harvest.ALLOWED_INTERFACES=${ICE4J_ALLOWED_INTERFACES}"
+fi
+
+# Allowed addresses - restrict to specific IPs if set
+if [ -n "$ICE4J_ALLOWED_ADDRESSES" ]; then
+    JAVA_SYS_PROPS="$JAVA_SYS_PROPS -Dorg.ice4j.ice.harvest.ALLOWED_ADDRESSES=${ICE4J_ALLOWED_ADDRESSES}"
+fi
+
+# Blocked addresses - block Docker bridges and k3s pod network by default
+ICE4J_BLOCKED="${ICE4J_BLOCKED_ADDRESSES:-}"
+if [ -n "$ICE4J_BLOCKED" ]; then
+    JAVA_SYS_PROPS="$JAVA_SYS_PROPS -Dorg.ice4j.ice.harvest.BLOCKED_ADDRESSES=${ICE4J_BLOCKED}"
+fi
+
+# Disable IPv6 (causes issues in Docker/cloud environments)
+JAVA_SYS_PROPS="$JAVA_SYS_PROPS -Dorg.ice4j.ipv6.DISABLED=true"
 
 # Disable link-local IPv6 addresses (not routable)
 JAVA_SYS_PROPS="$JAVA_SYS_PROPS -Dorg.ice4j.ice.harvest.USE_LINK_LOCAL_ADDRESSES=false"
@@ -86,8 +116,11 @@ export JAVA_SYS_PROPS
 
 # Log the ice4j configuration for debugging
 echo "ICE4J Configuration:"
-echo "  ALLOWED_ADDRESSES: ${ICE4J_ALLOWED}"
-echo "  BLOCKED_ADDRESSES: ${ICE4J_BLOCKED}"
+echo "  LOCAL_ADDRESS: ${ICE4J_LOCAL_ADDRESS:-auto}"
+echo "  PUBLIC_ADDRESS: ${ICE4J_PUBLIC_ADDRESS:-auto}"
+echo "  ALLOWED_INTERFACES: ${ICE4J_ALLOWED_INTERFACES:-all}"
+echo "  ALLOWED_ADDRESSES: ${ICE4J_ALLOWED_ADDRESSES:-all}"
+echo "  BLOCKED_ADDRESSES: ${ICE4J_BLOCKED:-none}"
 echo "  JAVA_SYS_PROPS: ${JAVA_SYS_PROPS}"
 
 # Run jigasi with s6-setuidgid (drops to jigasi user)

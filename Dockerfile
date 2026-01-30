@@ -27,9 +27,12 @@ FROM jitsi/jigasi:stable-9823
 COPY --from=builder /build/target/jigasi-1.1-SNAPSHOT.jar /usr/share/jigasi/jigasi.jar
 
 # Copy custom run script with ice4j and transcription configuration
-# Environment variables for ICE4J:
-#   ICE4J_ALLOWED_ADDRESSES - Semicolon-separated list of allowed IPs (default: auto-detect)
-#   ICE4J_BLOCKED_ADDRESSES - Semicolon-separated list of blocked IPs (default: Docker bridges)
+# Environment variables for ICE4J (NAT/network configuration):
+#   ICE4J_LOCAL_ADDRESS - Local IP address for NAT harvester (auto-detected if not set)
+#   ICE4J_PUBLIC_ADDRESS - Public IP address for NAT harvester (auto-detected from EC2 metadata)
+#   ICE4J_ALLOWED_INTERFACES - Semicolon-separated interface names (e.g., ens5;eth0)
+#   ICE4J_ALLOWED_ADDRESSES - Semicolon-separated list of allowed IPs
+#   ICE4J_BLOCKED_ADDRESSES - Semicolon-separated list of blocked IPs
 # Environment variables for Transcription:
 #   JIGASI_ENABLE_TRANSCRIPTION - Set to "true" to enable transcription mode (disables SIP)
 #   JIGASI_TRANSCRIPTION_SERVICE - Custom transcription service class (default: WhisperTranscriptionService)
