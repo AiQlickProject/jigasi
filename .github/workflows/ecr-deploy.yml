@@ -8,7 +8,7 @@ on:
 env:
   AWS_REGION: eu-north-1
   ECR_REPOSITORY: aiqlick-jigasi
-  EC2_INSTANCE_ID: i-045637df157f02c63
+  EC2_INSTANCE_ID: i-0620d2e23695f5bfc
   AWS_ROLE_ARN: arn:aws:iam::842697652860:role/github-actions-role
 
 jobs:
