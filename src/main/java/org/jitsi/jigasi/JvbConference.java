@@ -190,6 +190,22 @@ public class JvbConference
     private String colibriWebSocketUrl;
 
     /**
+     * Number of retry attempts for Colibri WebSocket connection.
+     * The URL may arrive in a later transport-info IQ after the call starts.
+     */
+    private int colibriWsRetryCount = 0;
+
+    /**
+     * Max retries for Colibri WebSocket connection (2s apart = 10s total window).
+     */
+    private static final int COLIBRI_WS_MAX_RETRIES = 5;
+
+    /**
+     * Delay between Colibri WebSocket connection retries (milliseconds).
+     */
+    private static final long COLIBRI_WS_RETRY_DELAY_MS = 2000;
+
+    /**
      * A timer which will be used to schedule a quick non-blocking check whether there is any activity
      * on the bridge side of the call.
      */
@@ -2256,21 +2272,21 @@ public class JvbConference
 
     /**
      * Extracts the Colibri WebSocket URL from a Jingle session-initiate or transport-info IQ XML.
-     * The URL is in a web-socket element with namespace http://jitsi.org/protocol/colibri.
-     * If the call is already in progress, attempts to connect immediately.
+     * Handles both cases: xmlns on the web-socket element itself, or inherited from parent.
+     * When Smack re-serializes parsed IQs, the xmlns may be on the parent transport element
+     * rather than repeated on the web-socket child, so we use a relaxed pattern as fallback.
      *
      * @param xml The raw XML of the Jingle IQ
      */
     private void extractColibriWebSocketUrl(String xml)
     {
-        // Look for: <web-socket xmlns='http://jitsi.org/protocol/colibri' url='...'/>
-        // or: <web-socket xmlns="http://jitsi.org/protocol/colibri" url="..."/>
+        String extractedUrl = null;
+
+        // Pattern 1: xmlns directly on web-socket element (either order)
         Pattern pattern = Pattern.compile(
             "<web-socket[^>]*xmlns=['\"]http://jitsi.org/protocol/colibri['\"][^>]*url=['\"]([^'\"]+)['\"]",
             Pattern.CASE_INSENSITIVE
         );
-
-        String extractedUrl = null;
         Matcher matcher = pattern.matcher(xml);
         if (matcher.find())
         {
@@ -2278,7 +2294,6 @@ public class JvbConference
         }
         else
         {
-            // Try alternative pattern where url comes before xmlns
             Pattern altPattern = Pattern.compile(
                 "<web-socket[^>]*url=['\"]([^'\"]+)['\"][^>]*xmlns=['\"]http://jitsi.org/protocol/colibri['\"]",
                 Pattern.CASE_INSENSITIVE
@@ -2287,6 +2302,22 @@ public class JvbConference
             if (altMatcher.find())
             {
                 extractedUrl = altMatcher.group(1);
+            }
+        }
+
+        // Pattern 2 (fallback): xmlns inherited from parent — web-socket has no xmlns attribute.
+        // Match any <web-socket> with a url starting with wss:// (unique enough to avoid false positives)
+        if (extractedUrl == null)
+        {
+            Pattern relaxedPattern = Pattern.compile(
+                "<web-socket[^>]*url=['\"]((wss?://)[^'\"]+)['\"]",
+                Pattern.CASE_INSENSITIVE
+            );
+            Matcher relaxedMatcher = relaxedPattern.matcher(xml);
+            if (relaxedMatcher.find())
+            {
+                extractedUrl = relaxedMatcher.group(1);
+                logger.info("Extracted Colibri WebSocket URL via relaxed pattern (inherited xmlns)");
             }
         }
 
@@ -2307,13 +2338,14 @@ public class JvbConference
         }
         else
         {
-            // Only warn if we don't already have a URL
             if (this.colibriWebSocketUrl == null)
             {
-                logger.debug("No Colibri WebSocket URL found in Jingle IQ");
+                logger.warn("No Colibri WebSocket URL found in Jingle IQ — "
+                    + "JVB may expire this endpoint after EndpointMessageTransportTimeout");
                 if (logger.isDebugEnabled())
                 {
-                    logger.debug("Jingle IQ XML: " + xml);
+                    logger.debug("Jingle IQ XML (first 2000 chars): "
+                        + xml.substring(0, Math.min(xml.length(), 2000)));
                 }
             }
         }
@@ -2330,15 +2362,37 @@ public class JvbConference
             return;
         }
 
-        if (this.colibriWebSocketUrl == null || this.colibriWebSocketUrl.isEmpty())
-        {
-            logger.warn("No Colibri WebSocket URL available, JVB may not forward audio");
-            return;
-        }
-
         if (this.colibriWebSocketClient != null && this.colibriWebSocketClient.isConnected())
         {
             logger.info("Colibri WebSocket already connected");
+            return;
+        }
+
+        if (this.colibriWebSocketUrl == null || this.colibriWebSocketUrl.isEmpty())
+        {
+            // URL not yet available — schedule retry if under max attempts.
+            // The URL may arrive in a later transport-info IQ after call starts.
+            if (this.colibriWsRetryCount < COLIBRI_WS_MAX_RETRIES)
+            {
+                this.colibriWsRetryCount++;
+                logger.info("Colibri WebSocket URL not available yet, scheduling retry "
+                    + this.colibriWsRetryCount + "/" + COLIBRI_WS_MAX_RETRIES
+                    + " in " + COLIBRI_WS_RETRY_DELAY_MS + "ms");
+                checkReceivedMediaTimer.schedule(new TimerTask()
+                {
+                    @Override
+                    public void run()
+                    {
+                        connectColibriWebSocket();
+                    }
+                }, COLIBRI_WS_RETRY_DELAY_MS);
+            }
+            else
+            {
+                logger.error("Colibri WebSocket URL still unavailable after "
+                    + COLIBRI_WS_MAX_RETRIES + " retries — "
+                    + "JVB will NOT forward audio to transcriber");
+            }
             return;
         }
 
@@ -2384,6 +2438,7 @@ public class JvbConference
             this.colibriWebSocketClient = null;
         }
         this.colibriWebSocketUrl = null;
+        this.colibriWsRetryCount = 0;
     }
 
     /**
