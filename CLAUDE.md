@@ -41,7 +41,7 @@ Jitsi Prosody (XMPP)
     ↓
 Jigasi (this repo)
     ↓ WebSocket (audio stream + user_id header)
-background-tasks (wss://ai.aiqlick.com/transcription/ws)
+background-tasks (wss://api.aiqlick.com/transcription/ws)
     ↓
 AWS Transcribe (eu-west-1)
     ↓
@@ -71,7 +71,7 @@ The base image provides all Jigasi runtime dependencies in `/usr/share/jigasi/li
 ## Transcription Services
 
 Available providers in `src/main/.../transcription/`:
-- **WhisperTranscriptionService** — Our primary: WebSocket to background-tasks
+- **TranscribeService** — Our primary: WebSocket to background-tasks
 - GoogleCloudTranscriptionService — Google Cloud Speech
 - VoskTranscriptionService — Vosk offline
 - OracleTranscriptionService — Oracle Cloud
@@ -87,9 +87,9 @@ Set in `docker/custom-run.sh` and `jitsi-deploy/docker-compose.yml`:
 
 **Transcription:**
 - `JIGASI_ENABLE_TRANSCRIPTION` — `true` to enable (disables SIP)
-- `JIGASI_TRANSCRIPTION_SERVICE` — Service class (default: WhisperTranscriptionService)
-- `JIGASI_WHISPER_WEBSOCKET_URL` — WebSocket URL (e.g., `wss://ai.aiqlick.com/transcription/ws`)
-- `JIGASI_WHISPER_PRIVATE_KEY` — Base64 private key for JWT auth (optional)
+- `JIGASI_TRANSCRIPTION_SERVICE` — Service class (default: TranscribeService)
+- `JIGASI_TRANSCRIBER_URL` — WebSocket URL (e.g., `wss://api.aiqlick.com/transcription/ws`)
+- `JIGASI_TRANSCRIBER_PRIVATE_KEY` — Base64 private key for JWT auth (optional)
 
 **XMPP:**
 - `XMPP_SERVER` — Prosody server (default: `meet.jitsi`)
@@ -112,7 +112,7 @@ Set in `docker/custom-run.sh` and `jitsi-deploy/docker-compose.yml`:
 Jigasi runs as one of 7 containers in `jitsi-deploy`:
 - Registers in `JigasiBrewery` MUC → Jicofo discovers it
 - Joins conferences as hidden participant (via `hidden.meet.jitsi` domain)
-- Streams audio to `wss://ai.aiqlick.com/transcription/ws` via WhisperTranscriptionService
+- Streams audio to `wss://api.aiqlick.com/transcription/ws` via TranscribeService
 - Requires `JIGASI_ALWAYS_USE_JVB=true` and `JIGASI_DISABLE_P2P=true` (container environments don't support P2P)
 - Does NOT need `ICE4J_PUBLIC_ADDRESS` — only communicates with JVB on Docker network
 

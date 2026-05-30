@@ -103,7 +103,7 @@ public class TranscriptionGateway
     static {
         transcriberClasses.put("GOOGLE", "org.jitsi.jigasi.transcription.GoogleCloudTranscriptionService");
         transcriberClasses.put("ORACLE_CLOUD_AI_SPEECH", "org.jitsi.jigasi.transcription.OracleTranscriptionService");
-        transcriberClasses.put("EGHT_WHISPER", "org.jitsi.jigasi.transcription.WhisperTranscriptionService");
+        transcriberClasses.put("TRANSCRIBE", "org.jitsi.jigasi.transcription.TranscribeService");
         transcriberClasses.put("VOSK", "org.jitsi.jigasi.transcription.VoskTranscriptionService");
 
         privateKeyFilePath = JigasiBundleActivator.getConfigurationService().getString(PRIVATE_KEY_PATH);

@@ -37,14 +37,14 @@ import java.util.concurrent.*;
 import java.util.function.*;
 
 /**
- * This holds the websocket that is used to send audio data to the Whisper.
- * This is one WhisperWebsocket per room.
+ * This holds the websocket that is used to send audio data to the Transcribe service.
+ * This is one TranscribeWebsocket per room.
  * The jetty WebSocketClient process messages in a single thread.
  */
 @WebSocket
-public class WhisperWebsocket
+public class TranscribeWebsocket
 {
-    private final static Logger classLogger = new LoggerImpl(WhisperWebsocket.class.getName());
+    private final static Logger classLogger = new LoggerImpl(TranscribeWebsocket.class.getName());
 
     private Session wsSession;
 
@@ -65,28 +65,28 @@ public class WhisperWebsocket
     private final Logger logger;
 
     /**
-     * JWT audience for the Whisper service.
+     * JWT audience for the Transcribe service.
      */
     public final static String JWT_AUDIENCE
-            = "org.jitsi.jigasi.transcription.whisper.jwt_audience";
+            = "org.jitsi.jigasi.transcription.transcribe.jwt_audience";
 
     /**
      * The config key of the websocket to the speech-to-text service.
      */
     public final static String WEBSOCKET_URL
-            = "org.jitsi.jigasi.transcription.whisper.websocket_url";
+            = "org.jitsi.jigasi.transcription.transcribe.websocket_url";
 
     /**
      * The config key for the JWT key name
      */
     public final static String PRIVATE_KEY_NAME
-            = "org.jitsi.jigasi.transcription.whisper.private_key_name";
+            = "org.jitsi.jigasi.transcription.transcribe.private_key_name";
 
     /**
      * The base64 encoded private key used for signing
      */
     public final static String PRIVATE_KEY
-            = "org.jitsi.jigasi.transcription.whisper.private_key";
+            = "org.jitsi.jigasi.transcription.transcribe.private_key";
 
     public final static String DEFAULT_WEBSOCKET_URL = "ws://localhost:8000/ws";
 
@@ -107,7 +107,7 @@ public class WhisperWebsocket
     private String websocketUrl;
 
     /**
-     * The Connection ID to the Whisper Service
+     * The Connection ID to the Transcribe Service
      */
     private final String connectionId = UUID.randomUUID().toString();
 
@@ -133,9 +133,9 @@ public class WhisperWebsocket
                 .getString(PRIVATE_KEY_NAME, "");
         if (privateKey.isEmpty() || privateKeyName.isEmpty())
         {
-            classLogger.warn("org.jitsi.jigasi.transcription.whisper.private_key_name or " +
-                    "org.jitsi.jigasi.transcription.whisper.private_key are empty." +
-                    "Will not generate a JWT for skynet/streaming-whisper.");
+            classLogger.warn("org.jitsi.jigasi.transcription.transcribe.private_key_name or " +
+                    "org.jitsi.jigasi.transcription.transcribe.private_key are empty. " +
+                    "Will not generate a JWT for Transcribe service.");
         }
 
         String wsUrlConfig = JigasiBundleActivator.getConfigurationService()
@@ -152,15 +152,15 @@ public class WhisperWebsocket
     }
 
     /**
-     * The thread pool to serve all connect, disconnect ore reconnect operations.
+     * The thread pool to serve all connect, disconnect or reconnect operations.
      */
-    private static final ExecutorService threadPool = Util.createNewThreadPool("jigasi-whisper-ws");
+    private static final ExecutorService threadPool = Util.createNewThreadPool("jigasi-transcribe-ws");
 
     private final JSONParser jsonParser = new JSONParser();
 
-    public WhisperWebsocket(Logger parentLogger)
+    public TranscribeWebsocket(Logger parentLogger)
     {
-        logger = parentLogger.createChildLogger(WhisperWebsocket.class.getName());
+        logger = parentLogger.createChildLogger(TranscribeWebsocket.class.getName());
     }
 
     /**
@@ -172,7 +172,7 @@ public class WhisperWebsocket
         websocketUrl = websocketUrlConfig + "/" + connectionId;
         if (logger.isDebugEnabled())
         {
-            logger.debug(" Whisper URL: " + websocketUrl);
+            logger.debug(" Transcribe URL: " + websocketUrl);
         }
     }
 
@@ -486,7 +486,7 @@ public class WhisperWebsocket
 
             if (participants.isEmpty())
             {
-                logger.info("All participants have left, disconnecting from Whisper transcription server.");
+                logger.info("All participants have left, disconnecting from Transcribe server.");
 
                 try
                 {

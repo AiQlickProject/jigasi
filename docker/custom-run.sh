@@ -27,27 +27,31 @@ if [ -n "$JIGASI_ENABLE_TRANSCRIPTION" ] && [ "$JIGASI_ENABLE_TRANSCRIPTION" = "
     set_prop "org.jitsi.jigasi.ENABLE_TRANSCRIPTION" "true"
     set_prop "org.jitsi.jigasi.ENABLE_SIP" "false"
 
-    # Set custom transcription service (WhisperTranscriptionService)
+    # Set custom transcription service (TranscribeService)
     if [ -n "$JIGASI_TRANSCRIPTION_SERVICE" ]; then
         set_prop "org.jitsi.jigasi.transcription.customService" "$JIGASI_TRANSCRIPTION_SERVICE"
     else
-        set_prop "org.jitsi.jigasi.transcription.customService" "org.jitsi.jigasi.transcription.WhisperTranscriptionService"
+        set_prop "org.jitsi.jigasi.transcription.customService" "org.jitsi.jigasi.transcription.TranscribeService"
     fi
 
-    # Set Whisper WebSocket URL
-    if [ -n "$JIGASI_WHISPER_WEBSOCKET_URL" ]; then
-        set_prop "org.jitsi.jigasi.transcription.whisper.websocket_url" "$JIGASI_WHISPER_WEBSOCKET_URL"
+    # Set Transcribe WebSocket URL
+    TRANSCRIBE_URL="${JIGASI_TRANSCRIBER_URL:-${JIGASI_TRANSCRIBER_AWS_URL:-${JIGASI_AWS_TRANSCRIBE_URL:-$JIGASI_WHISPER_WEBSOCKET_URL}}}"
+    if [ -n "$TRANSCRIBE_URL" ]; then
+        set_prop "org.jitsi.jigasi.transcription.transcribe.websocket_url" "$TRANSCRIBE_URL"
     fi
 
-    # Optional: JWT settings for authenticated Whisper service
-    if [ -n "$JIGASI_WHISPER_PRIVATE_KEY" ]; then
-        set_prop "org.jitsi.jigasi.transcription.whisper.private_key" "$JIGASI_WHISPER_PRIVATE_KEY"
+    # Optional: JWT settings for authenticated Transcribe service
+    TRANSCRIBE_KEY="${JIGASI_TRANSCRIBER_PRIVATE_KEY:-${JIGASI_AWS_TRANSCRIBE_PRIVATE_KEY:-$JIGASI_WHISPER_PRIVATE_KEY}}"
+    if [ -n "$TRANSCRIBE_KEY" ]; then
+        set_prop "org.jitsi.jigasi.transcription.transcribe.private_key" "$TRANSCRIBE_KEY"
     fi
-    if [ -n "$JIGASI_WHISPER_PRIVATE_KEY_NAME" ]; then
-        set_prop "org.jitsi.jigasi.transcription.whisper.private_key_name" "$JIGASI_WHISPER_PRIVATE_KEY_NAME"
+    TRANSCRIBE_KEY_NAME="${JIGASI_TRANSCRIBER_PRIVATE_KEY_NAME:-${JIGASI_AWS_TRANSCRIBE_PRIVATE_KEY_NAME:-$JIGASI_WHISPER_PRIVATE_KEY_NAME}}"
+    if [ -n "$TRANSCRIBE_KEY_NAME" ]; then
+        set_prop "org.jitsi.jigasi.transcription.transcribe.private_key_name" "$TRANSCRIBE_KEY_NAME"
     fi
-    if [ -n "$JIGASI_WHISPER_JWT_AUDIENCE" ]; then
-        set_prop "org.jitsi.jigasi.transcription.whisper.jwt_audience" "$JIGASI_WHISPER_JWT_AUDIENCE"
+    TRANSCRIBE_AUDIENCE="${JIGASI_TRANSCRIBER_JWT_AUDIENCE:-${JIGASI_AWS_TRANSCRIBE_JWT_AUDIENCE:-$JIGASI_WHISPER_JWT_AUDIENCE}}"
+    if [ -n "$TRANSCRIBE_AUDIENCE" ]; then
+        set_prop "org.jitsi.jigasi.transcription.transcribe.jwt_audience" "$TRANSCRIBE_AUDIENCE"
     fi
 
     echo "Transcription configuration:"

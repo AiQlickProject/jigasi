@@ -663,7 +663,7 @@ public class Participant
     {
         int divider = EXPECTED_AUDIO_LENGTH;
 
-        if (transcriptionServiceName.equals("WhisperTranscriptionService")
+        if (transcriptionServiceName.equals("TranscribeService")
                 || transcriptionServiceName.equals("OracleTranscriptionService"))
         {
             // the byte count for each 20ms packet if the audio format is 16kHz mono
@@ -673,8 +673,8 @@ public class Participant
         long millis = byteCount / divider * 20;
 
         switch (transcriptionServiceName) {
-            case "WhisperTranscriptionService":
-                Statistics.incrementTotalTranscriberWhisperMillis(millis);
+            case "TranscribeService":
+                Statistics.incrementTotalTranscriberTranscribeMillis(millis);
                 break;
             case "OracleTranscriptionService":
                 Statistics.incrementTotalTranscriberOracleMillis(millis);

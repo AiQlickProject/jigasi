@@ -35,11 +35,11 @@ COPY --from=builder /build/target/jigasi-1.1-SNAPSHOT.jar /usr/share/jigasi/jiga
 #   ICE4J_BLOCKED_ADDRESSES - Semicolon-separated list of blocked IPs
 # Environment variables for Transcription:
 #   JIGASI_ENABLE_TRANSCRIPTION - Set to "true" to enable transcription mode (disables SIP)
-#   JIGASI_TRANSCRIPTION_SERVICE - Custom transcription service class (default: WhisperTranscriptionService)
-#   JIGASI_WHISPER_WEBSOCKET_URL - WebSocket URL for Whisper service (e.g., wss://ai.aiqlick.com/transcription/ws)
-#   JIGASI_WHISPER_PRIVATE_KEY - Base64 encoded private key for JWT auth (optional)
-#   JIGASI_WHISPER_PRIVATE_KEY_NAME - Private key name for JWT auth (optional)
-#   JIGASI_WHISPER_JWT_AUDIENCE - JWT audience (optional, default: jitsi)
+#   JIGASI_TRANSCRIPTION_SERVICE - Custom transcription service class (default: TranscribeService)
+#   JIGASI_TRANSCRIBER_URL - WebSocket URL for Transcribe service (e.g., wss://api.aiqlick.com/transcription/ws)
+#   JIGASI_TRANSCRIBER_PRIVATE_KEY - Base64 encoded private key for JWT auth (optional)
+#   JIGASI_TRANSCRIBER_PRIVATE_KEY_NAME - Private key name for JWT auth (optional)
+#   JIGASI_TRANSCRIBER_JWT_AUDIENCE - JWT audience (optional, default: jitsi)
 COPY docker/custom-run.sh /etc/services.d/jigasi/run
 RUN chmod +x /etc/services.d/jigasi/run
 

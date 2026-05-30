@@ -140,9 +140,9 @@ public class Statistics
     public static final String TOTAL_TRANSCRIBER_OCI_MILLIS = "total_transcriber_oci_millis";
 
     /**
-     * The total number of milliseconds submitted to Skynet/Whisper for transcription.
+     * The total number of milliseconds submitted to Transcribe service for transcription.
      */
-    public static final String TOTAL_TRANSCRIBER_WSP_MILLIS = "total_transcriber_wsp_millis";
+    public static final String TOTAL_TRANSCRIBER_TSC_MILLIS = "total_transcriber_tsc_millis";
 
     /**
      * The total number of milliseconds submitted to Vosk for transcription.
@@ -364,11 +364,11 @@ public class Statistics
             "Total number of milliseconds sent to OCI API.");
 
     /**
-     * The total number of milliseconds submitted to Skynet Whisper for transcription.
+     * The total number of milliseconds submitted to Transcribe service for transcription.
      */
-    private static LongGaugeMetric totalTranscriberWhisperMillis = JigasiMetricsContainer.INSTANCE.registerLongGauge(
-            TOTAL_TRANSCRIBER_WSP_MILLIS,
-            "Total number of milliseconds sent to Skynet Whisper.");
+    private static LongGaugeMetric totalTranscriberTranscribeMillis = JigasiMetricsContainer.INSTANCE.registerLongGauge(
+            TOTAL_TRANSCRIBER_TSC_MILLIS,
+            "Total number of milliseconds sent to Transcribe service.");
 
     /**
      * The total number of milliseconds submitted to Vosk for transcription.
@@ -469,7 +469,7 @@ public class Statistics
         stats.put(TOTAL_TRANSCRIBER_G_MINUTES, totalTranscriberMinutes.get());
         stats.put(TOTAL_TRANSCRIBER_GGL_MILLIS, totalTranscriberGoogleMillis.get());
         stats.put(TOTAL_TRANSCRIBER_OCI_MILLIS, totalTranscriberOracleMillis.get());
-        stats.put(TOTAL_TRANSCRIBER_WSP_MILLIS, totalTranscriberWhisperMillis.get());
+        stats.put(TOTAL_TRANSCRIBER_TSC_MILLIS, totalTranscriberTranscribeMillis.get());
         stats.put(TOTAL_TRANSCRIBER_VSK_MILLIS, totalTranscriberVoskMillis.get());
 
         stats.put(TOTAL_TRANSCRIBER_STARTED, totalTrasnscriberStarted.get());
@@ -718,11 +718,11 @@ public class Statistics
     }
 
     /**
-     * Increment the value of total number of milliseconds sent to Skynet Whisper for transcription.
+     * Increment the value of total number of milliseconds sent to Transcribe service for transcription.
      */
-    public static void incrementTotalTranscriberWhisperMillis(long value)
+    public static void incrementTotalTranscriberTranscribeMillis(long value)
     {
-        totalTranscriberWhisperMillis.addAndGet(value);
+        totalTranscriberTranscribeMillis.addAndGet(value);
     }
 
     /**
