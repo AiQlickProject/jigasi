@@ -1,0 +1,124 @@
+name: Build and Push Jigasi to GHCR
+
+# Replaces ecr-deploy.yml, which cannot work any more: it pushes to ECR repo
+# `aiqlick-jigasi` (DELETED — describe-repositories returns
+# RepositoryNotFoundException) and then SSMs into EC2 i-0620d2e23695f5bfc to run
+# `docker compose pull`, on a host that has been retired. Its last green run was
+# 2026-05-30 and the artifact it produced no longer exists anywhere.
+#
+# The registry for this platform is ghcr.io/aiqlickproject/*, never ECR.
+#
+# Runs on the SELF-HOSTED runner, which lives on qpserver — the same node as the
+# k8s cluster that consumes the image. That is deliberate: the Maven build cache
+# stays warm on the node between runs, and the box has 200G+ free with container
+# images on the root LV and PVCs on a separate 1.5T volume, so a heavy Java build
+# cannot evict production support.
+
+on:
+  push:
+    branches: [master, main]
+    paths-ignore:
+      - '**.md'
+      - 'doc/**'
+  workflow_dispatch:
+
+env:
+  IMAGE: ghcr.io/aiqlickproject/jigasi
+
+# A build here is long (Maven resolves the whole Jitsi dependency tree) and two
+# concurrent runs would fight over the shared buildx cache. cancel-in-progress is
+# false: a superseded build is cheap to let finish, and cancelling mid-export can
+# leave the cache in a state the next run has to rebuild from scratch.
+concurrency:
+  group: jigasi-ghcr
+  cancel-in-progress: false
+
+jobs:
+  build-and-push:
+    runs-on: [self-hosted, Linux, X64, aiqlick-dev]
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # The shared persistent builder is created out of band on the host.
+      # `docker buildx create` ERRORS on an existing name, so inspect-or-create
+      # then use — this is why setup-buildx-action with a static name breaks on
+      # the second run, and why its automatic Post step must not be allowed to
+      # destroy the builder along with the cache.
+      - name: Use the shared buildx builder
+        run: |
+          docker buildx inspect aiqlick-shared >/dev/null 2>&1 \
+            || docker buildx create --name aiqlick-shared --driver docker-container --bootstrap
+          docker buildx use aiqlick-shared
+
+      - name: Metadata
+        id: meta
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      # mode=max, not min: min exports only the final stage and discards the
+      # Maven stage, which is the expensive one — the whole point of caching here.
+      #
+      # Tagged with the FULL sha so the deployed commit is readable straight off
+      # the image, the way the rest of this cluster works:
+      #   kubectl -n meeting get deploy jitsi-jigasi -o jsonpath='...image'
+      # `latest` moves and must never be what a manifest pins.
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          provenance: false
+          tags: |
+            ${{ env.IMAGE }}:dev-${{ steps.meta.outputs.sha }}
+            ${{ env.IMAGE }}:latest
+          cache-from: type=local,src=/tmp/jigasi-buildx-cache
+          cache-to: type=local,dest=/tmp/jigasi-buildx-cache,mode=max
+
+      # The base layer is upstream jitsi/jigasi; only the JAR and the run script
+      # come from this fork. So a base-only image would be indistinguishable from
+      # outside, and this asserts the fork's own artifacts are actually in there.
+      # It also checks `grep` and procfs exist, because the k8s liveness probe
+      # greps /proc/net/tcp for an ESTABLISHED XMPP connection and is fail-safe —
+      # if those are missing the probe passes silently and stops protecting
+      # anything.
+      - name: Verify the image contains the fork, not just the base
+        run: |
+          IMG="${{ env.IMAGE }}:dev-${{ steps.meta.outputs.sha }}"
+          docker pull "$IMG"
+          docker run --rm --entrypoint sh "$IMG" -c '
+            set -e
+            unzip -l /usr/share/jigasi/jigasi.jar \
+              | grep -q "org/jitsi/jigasi/transcription/TranscribeService.class" \
+              || { echo "FAIL: TranscribeService missing — this is not the fork"; exit 1; }
+            unzip -l /usr/share/jigasi/jigasi.jar \
+              | grep -q "org/jitsi/jigasi/transcription/TranscribeWebsocket.class" \
+              || { echo "FAIL: TranscribeWebsocket missing"; exit 1; }
+            grep -q "transcribe.websocket_url" /etc/services.d/jigasi/run \
+              || { echo "FAIL: run script is not the fork custom-run.sh"; exit 1; }
+            command -v grep >/dev/null || { echo "FAIL: no grep — liveness probe would silently pass"; exit 1; }
+            test -r /proc/net/tcp || { echo "FAIL: no procfs — liveness probe would silently pass"; exit 1; }
+            echo "OK: fork artifacts present, probe dependencies present"
+          '
+
+      - name: Summary
+        run: |
+          {
+            echo "### Jigasi image pushed"
+            echo ""
+            echo '```'
+            echo "${{ env.IMAGE }}:dev-${{ steps.meta.outputs.sha }}"
+            echo '```'
+            echo ""
+            echo "Pin that tag in \`k8s/jitsi/90-jigasi.yaml\`. Do not pin \`latest\`."
+          } >> "$GITHUB_STEP_SUMMARY"
