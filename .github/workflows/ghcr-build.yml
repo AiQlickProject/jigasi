@@ -8,11 +8,22 @@ name: Build and Push Jigasi to GHCR
 #
 # The registry for this platform is ghcr.io/aiqlickproject/*, never ECR.
 #
-# Runs on the SELF-HOSTED runner, which lives on qpserver — the same node as the
-# k8s cluster that consumes the image. That is deliberate: the Maven build cache
-# stays warm on the node between runs, and the box has 200G+ free with container
-# images on the root LV and PVCs on a separate 1.5T volume, so a heavy Java build
-# cannot evict production support.
+# Runs on a GITHUB-HOSTED runner, not the self-hosted ones on qpserver.
+#
+# The self-hosted runners were the first choice — the Maven cache stays warm on
+# the node that consumes the image, and that box has 200G+ free with PVCs on a
+# separate volume so a heavy Java build cannot evict production support. They
+# cannot be used here: the org runner group is `allows_public_repositories: false`
+# and this repo is PUBLIC, so a job targeting them sits queued until GitHub
+# cancels it after 24h. Nothing in the run's own logs says why.
+#
+# The obvious workaround does not exist either: GitHub refuses to make a public
+# FORK private ("Public forks can't be made private"), and this is a fork of
+# jitsi/jigasi. Detaching from the fork network is a UI-only action.
+#
+# So: ubuntu-latest, which builds public repos for free and pushes to GHCR just
+# the same. The cost is a cold Maven cache each run — the GHA cache below is what
+# takes the sting out of that.
 
 on:
   push:
@@ -35,7 +46,7 @@ concurrency:
 
 jobs:
   build-and-push:
-    runs-on: [self-hosted, Linux, X64, aiqlick-dev]
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
@@ -51,16 +62,11 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # The shared persistent builder is created out of band on the host.
-      # `docker buildx create` ERRORS on an existing name, so inspect-or-create
-      # then use — this is why setup-buildx-action with a static name breaks on
-      # the second run, and why its automatic Post step must not be allowed to
-      # destroy the builder along with the cache.
-      - name: Use the shared buildx builder
-        run: |
-          docker buildx inspect aiqlick-shared >/dev/null 2>&1 \
-            || docker buildx create --name aiqlick-shared --driver docker-container --bootstrap
-          docker buildx use aiqlick-shared
+      # A hosted runner is a fresh VM every time, so there is no shared builder to
+      # reuse and none of the inspect-or-create dance the self-hosted workflows
+      # need. Let the action create one per run.
+      - name: Set up buildx
+        uses: docker/setup-buildx-action@v3
 
       - name: Metadata
         id: meta
@@ -82,8 +88,11 @@ jobs:
           tags: |
             ${{ env.IMAGE }}:dev-${{ steps.meta.outputs.sha }}
             ${{ env.IMAGE }}:latest
-          cache-from: type=local,src=/tmp/jigasi-buildx-cache
-          cache-to: type=local,dest=/tmp/jigasi-buildx-cache,mode=max
+          # GHA cache, not local: the VM is discarded after each run, so a local
+          # cache dir would be empty every time and the Maven stage — the whole
+          # reason for caching — would rebuild from scratch on every push.
+          cache-from: type=gha,scope=jigasi
+          cache-to: type=gha,scope=jigasi,mode=max
 
       # The base layer is upstream jitsi/jigasi; only the JAR and the run script
       # come from this fork. So a base-only image would be indistinguishable from
