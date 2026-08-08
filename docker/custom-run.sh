@@ -55,7 +55,13 @@ if [ -n "$JIGASI_ENABLE_TRANSCRIPTION" ] && [ "$JIGASI_ENABLE_TRANSCRIPTION" = "
     fi
 
     echo "Transcription configuration:"
-    grep -E "^org.jitsi.jigasi.(ENABLE_|transcription)" "$SIP_PROPS" 2>/dev/null || true
+    # Never dump the broad transcription namespace: it contains the ASAP
+    # private signing key. Log an explicit non-secret allowlist and only the
+    # presence of the key so future credentials cannot leak through pod logs.
+    grep -E '^org\.jitsi\.jigasi\.(ENABLE_(TRANSCRIPTION|SIP)|transcription\.(customService|transcribe\.(websocket_url|private_key_name|jwt_audience)))=' "$SIP_PROPS" 2>/dev/null || true
+    if grep -q '^org\.jitsi\.jigasi\.transcription\.transcribe\.private_key=' "$SIP_PROPS" 2>/dev/null; then
+        echo 'org.jitsi.jigasi.transcription.transcribe.private_key=[REDACTED]'
+    fi
 fi
 
 # ==============================================================================
