@@ -1,8 +1,22 @@
-name: Build and Deploy Jigasi to ECR
+name: Build and Deploy Jigasi to ECR (RETIRED — every target below is gone)
 
+# Superseded by ghcr-build.yml, which succeeded on the very same commits this failed
+# on. Both targets here no longer exist:
+#
+#   * ECR_REPOSITORY `aiqlick-jigasi` is DELETED, so the push ended in
+#       failed to push .../aiqlick-jigasi:latest: The repository with name
+#       'aiqlick-jigasi' does not exist
+#   * EC2_INSTANCE_ID i-0620d2e23695f5bfc is TERMINATED — Jitsi is not deployed
+#     to instances any more. It runs on Kubernetes on the Swedish cluster.
+#
+# THE `push: branches: [main, master]` TRIGGER IS REMOVED, which is the only
+# functional change — it is what made every push to master red while the GHCR build
+# beside it went green. workflow_dispatch is left in place so the file stays a
+# runnable record of the old pipeline rather than a deletion nobody can review.
+#
+# aiqlick-meeting/.github/workflows/ecr-deploy.yml was retired the same way, for the
+# same reasons, and names this repo's ECR repository as deleted too.
 on:
-  push:
-    branches: [main, master]
   workflow_dispatch:
 
 env:
