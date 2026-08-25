@@ -133,3 +133,21 @@ git add . && git commit -m "feat: description"
 git push origin dev
 # Create PR: dev → master, merge triggers ECR deploy
 ```
+
+## Before debugging a failing fix: prove your code is deployed
+
+When a change "still fails" in dev or prod, the first question is **is my code actually
+running there** — not "what else is wrong with my code". Three debug cycles were spent on
+2026-08-25 fixing code that was never in the running image.
+
+- **Match the deploy run to the commit, not to recency.** `gh run list --limit 1` returns
+  the newest run, which is frequently for the *previous* commit:
+  `gh run list --branch <b> --workflow "<w>" --limit 5 --json databaseId,headSha,status,conclusion`
+- **Grep the running artifact** for a string unique to the change. On the Swedish cluster the
+  image tag carries the full SHA:
+  `kubectl -n <ns> get deploy <d> -o jsonpath='{.spec.template.spec.containers[0].image}'`
+- **Diagnose in one pass, not one fix per deploy.** Print every layer as labelled facts
+  (`D1=`, `D2=`, …) in a single run. Eleven labelled facts in ~90 seconds replaced eight PRs
+  and revealed three stacked causes that could only surface one at a time.
+- **Never wrap the diagnostic path in `try/catch`** — it swallows the error that would have
+  named the layer. Defensive handling belongs in the fix, not the probe.
