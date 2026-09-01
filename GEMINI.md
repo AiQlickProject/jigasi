@@ -15,3 +15,4 @@ Custom Jitsi Jigasi fork for AWS Transcribe-based real-time transcription.
 - **Service:** Operates as a hidden participant in Jitsi conferences to capture and stream audio.
 
 For full details, see the root [GEMINI.md](../GEMINI.md) and [docs.aiqlick.com](https://docs.aiqlick.com).
+- **Verify the deployed artifact is your code** before debugging a failing fix. Match deploy runs on `headSha`, not recency. Diagnose all layers in one pass; never `try/catch` the probe.
