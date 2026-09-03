@@ -151,3 +151,13 @@ running there** — not "what else is wrong with my code". Three debug cycles we
   and revealed three stacked causes that could only surface one at a time.
 - **Never wrap the diagnostic path in `try/catch`** — it swallows the error that would have
   named the layer. Defensive handling belongs in the fix, not the probe.
+
+## Watching a long job (workspace rule)
+
+Break a monitor on **process absence** (`pgrep -f '<script>' >/dev/null || break`),
+never on a log marker — a job that dies a way you did not enumerate otherwise
+polls forever, and silence is indistinguishable from progress. One watcher per
+subject. Never pipe a long job through `| tail -N` (it buffers until exit, so a
+hang looks like work — use `tee -a`). `kill -9` leaves a finalizer-dependent job,
+such as a W&B run, showing `running`; send SIGTERM first. And never act
+destructively on one early datapoint — read the trend.

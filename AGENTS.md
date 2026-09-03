@@ -27,3 +27,13 @@ ECR: `842697652860.dkr.ecr.eu-north-1.amazonaws.com/aiqlick-jigasi`.
 
 See `CLAUDE.md` for full source layout, CI matrix (Java 11/17/21), and transcription flow.
 - **Before debugging a failing fix, prove your code is deployed.** Match the deploy run on `headSha`, not recency (`--limit 1` often returns the previous commit's run), and grep the running artifact for something unique to the change. Diagnose every layer in one pass with labelled output rather than one fix per deploy — and never `try/catch` the probe, it hides the answer.
+
+## Watching a long job (workspace rule)
+
+Break a monitor on **process absence** (`pgrep -f '<script>' >/dev/null || break`),
+never on a log marker — a job that dies a way you did not enumerate otherwise
+polls forever, and silence is indistinguishable from progress. One watcher per
+subject. Never pipe a long job through `| tail -N` (it buffers until exit, so a
+hang looks like work — use `tee -a`). `kill -9` leaves a finalizer-dependent job,
+such as a W&B run, showing `running`; send SIGTERM first. And never act
+destructively on one early datapoint — read the trend.
