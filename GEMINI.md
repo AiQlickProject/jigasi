@@ -9,6 +9,7 @@ Custom Jitsi Jigasi fork for AWS Transcribe-based real-time transcription.
 ## Critical Rules
 - **Transcription:** Configured to use `TranscribeService`.
 - **WebSocket:** Connects to `wss://api.aiqlick.com/transcription/ws` (via background-tasks) for real-time speech-to-text.
+- **Gating changes need a behavior diff + test:** diff what each audience could see/do before vs after against the base branch, and pin the must-stay-visible set in a test — a member allowlist once hid 44 of 56 tools its own comment claimed to allow (frontend PR #1161, 2026-09-06).
 
 ## Architectural Patterns
 - **Maven:** Uses standard Maven lifecycle.

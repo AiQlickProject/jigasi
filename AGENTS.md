@@ -27,6 +27,7 @@ ECR: `842697652860.dkr.ecr.eu-north-1.amazonaws.com/aiqlick-jigasi`.
 
 See `CLAUDE.md` for full source layout, CI matrix (Java 11/17/21), and transcription flow.
 - **Before debugging a failing fix, prove your code is deployed.** Match the deploy run on `headSha`, not recency (`--limit 1` often returns the previous commit's run), and grep the running artifact for something unique to the change. Diagnose every layer in one pass with labelled output rather than one fix per deploy — and never `try/catch` the probe, it hides the answer.
+- **Never gate visibility with an untested filter — in either direction.** A member tool allowlist commented "everything except admin-only writes" was a closed 12-item list hiding 44 of 56 sidebar tools (frontend PR #1161, 2026-09-06; proven by counting `value:` in `git show 64e663ba~1:components/reusable/chatbot/ChatPanel.tsx:76-153` = 56 against the 12-item set). When you add or tighten any audience/role gating: diff what each audience could see or do before vs after against the base branch, and pin the must-stay-visible set with a test that names names. Comments assert; only the diff and the test prove.
 
 ## Watching a long job (workspace rule)
 
