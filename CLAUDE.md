@@ -161,3 +161,12 @@ subject. Never pipe a long job through `| tail -N` (it buffers until exit, so a
 hang looks like work — use `tee -a`). `kill -9` leaves a finalizer-dependent job,
 such as a W&B run, showing `running`; send SIGTERM first. And never act
 destructively on one early datapoint — read the trend.
+
+## CI completion and smoke-test evidence
+
+- Match deployment and CI/security runs to the exact commit separately. A successful deployment does not make queued checks green. Inspect `gh api repos/<owner>/<repo>/actions/runs/<id>/jobs`: a run can remain `queued` while individual jobs are running or already successful. Check eligible runner labels and busy state before restarting runners or changing workflows.
+- Cancel an obsolete promotion-PR run only after confirming the PR is merged and equivalent checks remain on the intended commit. Preserve the actual production checks and unrelated work; never cancel a unique security gate to finish faster.
+- A short-lived probe can exit before an attached client captures stdout. Empty output is inconclusive, not proof of an HTTP/auth failure. Wait for container termination, read persisted logs and its exit code, and enforce the expected status AND body size. Keep transport failures distinct and fail closed.
+- Read the failed step before retrying. A wall-clock threshold can be affected by runner contention; one unchanged rerun of the failed job can establish whether it repeats. A passing retry does not prove every timing failure harmless. Investigate recurring failures without widening thresholds, skipping assertions, or suppressing scanner findings.
+
+Verified 2026-09-08: backend CI run `34210498184` progressed at job level while queued; docs run `34211487120` enforced `302 0` from completed-pod logs; backend dev run `34209852994` passed its failed timing shard unchanged on attempt 2.
