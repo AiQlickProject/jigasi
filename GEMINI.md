@@ -27,3 +27,7 @@ subject. Never pipe a long job through `| tail -N` (it buffers until exit, so a
 hang looks like work — use `tee -a`). `kill -9` leaves a finalizer-dependent job,
 such as a W&B run, showing `running`; send SIGTERM first. And never act
 destructively on one early datapoint — read the trend.
+
+## CI completion and smoke-test evidence
+
+Check deployment and CI/security separately for the exact SHA. A queued run can have completed/running jobs; inspect jobs and eligible busy runners first. Cancel only obsolete merged-PR duplicates with equivalent checks retained. Empty probe stdout is inconclusive: wait for termination, read logs/exit code, assert HTTP status and body size. Diagnose before one unchanged failed-job retry; recurring timing failures require investigation, never weakened gates. Verified against backend/docs Actions runs on 2026-09-08.
