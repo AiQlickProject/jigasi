@@ -73,6 +73,18 @@ public class ColibriWebSocketClient
     private volatile boolean connected = false;
 
     /**
+     * Set once {@link #disconnect()} has been called, so the errors that closing the connection causes are not
+     * reported as failures.
+     */
+    private volatile boolean disconnecting = false;
+
+    /**
+     * Released when the connection has closed, so {@link #disconnect()} can let the close handshake finish
+     * before it stops the client.
+     */
+    private final CountDownLatch closed = new CountDownLatch(1);
+
+    /**
      * JSON parser for incoming messages.
      */
     private final JSONParser jsonParser = new JSONParser();
@@ -81,6 +93,11 @@ public class ColibriWebSocketClient
      * Connection timeout in milliseconds.
      */
     private static final long CONNECTION_TIMEOUT_MS = 10000L;
+
+    /**
+     * How long {@link #disconnect()} waits for the close handshake.
+     */
+    private static final long CLOSE_TIMEOUT_MS = 1000L;
 
     /**
      * Listener for connection state changes.
@@ -149,13 +166,25 @@ public class ColibriWebSocketClient
      */
     public void disconnect()
     {
+        disconnecting = true;
         connected = false;
 
         if (wsSession != null && wsSession.isOpen())
         {
             try
             {
-                wsSession.close();
+                // Jetty 12 closes asynchronously. Stopping the client right after would drop the connection
+                // before the close frame is written (status 1006 on the JVB side, and an error here), so wait
+                // briefly for the handshake.
+                wsSession.close(StatusCode.NORMAL, "Jigasi leaving the conference", Callback.NOOP);
+                if (!closed.await(CLOSE_TIMEOUT_MS, TimeUnit.MILLISECONDS))
+                {
+                    logger.warn("Colibri WebSocket did not finish closing within " + CLOSE_TIMEOUT_MS + "ms");
+                }
+            }
+            catch (InterruptedException e)
+            {
+                Thread.currentThread().interrupt();
             }
             catch (Exception e)
             {
@@ -368,6 +397,7 @@ public class ColibriWebSocketClient
     {
         logger.info("Colibri WebSocket closed: " + statusCode + " - " + reason);
         connected = false;
+        closed.countDown();
 
         if (connectionListener != null)
         {
@@ -381,6 +411,12 @@ public class ColibriWebSocketClient
     @OnWebSocketError
     public void onError(Throwable error)
     {
+        if (disconnecting)
+        {
+            // The connection going away is the expected result of disconnect().
+            logger.debug("Colibri WebSocket error while disconnecting: " + error);
+            return;
+        }
         logger.error("Colibri WebSocket error: " + error.getMessage(), error);
     }
 
