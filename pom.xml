@@ -23,13 +23,28 @@
     <jxmppVersion>1.0.3</jxmppVersion>
     <jicoco.version>1.1-179-g52cf6ef</jicoco.version>
     <jitsi-utils.version>1.0-153-gd5c0102</jitsi-utils.version>
-    <jackson.version>2.21.5</jackson.version>
+    <jackson.version>2.21.7</jackson.version>
     <kotlin.version>2.4.20</kotlin.version>
-    <!-- Match jicoco's jetty version. -->
-    <jetty.version>12.0.35</jetty.version>
+    <!-- jicoco is built against Jetty 12.0.35. Patch releases of the same minor are compatible, and
+         12.0.35's jetty-security has CVE-2026-10050 (fixed in 12.0.36), so stay on 12.0.x but newer. -->
+    <jetty.version>12.0.39</jetty.version>
     <oci-sdk.version>3.86.1</oci-sdk.version>
+    <bouncycastle.version>1.85</bouncycastle.version>
   </properties>
 
+  <!--
+    Security pins for the transitive dependencies Trivy flags (2026-09-30). The Docker image is built from this
+    pom (see Dockerfile: it ships the assembly's lib/, not the upstream image's), so these are the versions
+    that run in production. Each is the lowest release that clears the findings and exists on Maven Central:
+      jackson 2.21.5 -> 2.21.7   (jackson.version above; CVE-2026-68497 in jackson-databind)
+      jetty   12.0.35 -> 12.0.39 (jetty.version above, core and ee10 BOMs so no module mixes patch levels;
+                                  CVE-2026-10050 in jetty-security, reached through jicoco-jetty)
+      grpc    1.71.0 -> 1.75.0   (via google-cloud-speech; CVE-2025-55163 in grpc-netty-shaded)
+      BouncyCastle 1.83 -> 1.85  (via libjitsi; CVE-2025-14813, CVE-2026-8763, CVE-2026-13506, CVE-2026-5598)
+      commons-io 2.11.0 -> 2.14.0 (via jitsi-android-osgi; CVE-2024-47554)
+    Managed here rather than on each dependency so a later bump of libjitsi or jicoco cannot silently pull
+    the old versions back in. Drop a pin once the dependency that brings it in ships a fixed version.
+  -->
   <dependencyManagement>
     <dependencies>
       <dependency>
@@ -38,6 +53,52 @@
         <version>${jackson.version}</version>
         <type>pom</type>
         <scope>import</scope>
+      </dependency>
+      <dependency>
+        <groupId>org.eclipse.jetty</groupId>
+        <artifactId>jetty-bom</artifactId>
+        <version>${jetty.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+      <dependency>
+        <groupId>org.eclipse.jetty.ee10</groupId>
+        <artifactId>jetty-ee10-bom</artifactId>
+        <version>${jetty.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+      <dependency>
+        <groupId>io.grpc</groupId>
+        <artifactId>grpc-bom</artifactId>
+        <version>1.75.0</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+      <dependency>
+        <groupId>org.bouncycastle</groupId>
+        <artifactId>bcprov-jdk18on</artifactId>
+        <version>${bouncycastle.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.bouncycastle</groupId>
+        <artifactId>bcpkix-jdk18on</artifactId>
+        <version>${bouncycastle.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.bouncycastle</groupId>
+        <artifactId>bctls-jdk18on</artifactId>
+        <version>${bouncycastle.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.bouncycastle</groupId>
+        <artifactId>bcutil-jdk18on</artifactId>
+        <version>${bouncycastle.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>commons-io</groupId>
+        <artifactId>commons-io</artifactId>
+        <version>2.14.0</version>
       </dependency>
     </dependencies>
   </dependencyManagement>
