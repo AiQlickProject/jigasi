@@ -27,7 +27,7 @@ docker build -t aiqlick-jigasi:latest .
 
 ### CI/CD
 ```bash
-# Maven CI runs on PRs (Java 11, 17, 21)
+# Maven CI runs on PRs (Java 17, 21, 25)
 # ECR deploy runs on push to main
 
 # Manual ECR build + deploy
@@ -52,11 +52,17 @@ Transcription records in PostgreSQL
 
 ## Docker Build
 
-Multi-stage build:
-1. **Builder** (`maven:3.9-eclipse-temurin-11`): Compiles JAR with dependencies
-2. **Runtime** (`jitsi/jigasi:stable-9823`): Copies custom JAR over official one + custom run script
+Multi-stage build, and the image runs as an unprivileged user (uid 10001) with no s6:
+1. **Builder** (`maven:3.9-eclipse-temurin-17`): `mvn package -Dassembly.skipAssembly=false` produces the distribution
+   (`jigasi.jar`, `jigasi.sh`, `lib/*.jar` resolved from `pom.xml`, pins included). The build fails if the jar is not the fork.
+2. **Upstream reference** (`jitsi/jigasi:stable-11031`): only a source for the `tpl` renderer and the `/defaults` config
+   templates, and a reference the runtime stage's rendering is diffed against.
+3. **Runtime** (`eclipse-temurin:17-jre-noble`): the assembly, `tpl`, `/defaults`, `docker/entrypoint.sh` (renders the config,
+   port of upstream's s6 init script) and `docker/custom-run.sh` (the fork's ICE4J/transcription script).
 
-The base image provides all Jigasi runtime dependencies in `/usr/share/jigasi/lib/`.
+The image ships **exactly the dependency set of `pom.xml`**, so the security pins in `pom.xml` are what runs. It used to copy
+a thin jar onto `jitsi/jigasi`, whose own `lib/` (older jackson, kotlin, jicoco) then loaded instead. When moving to a newer
+upstream release, bump the tag in the `upstream-reference` stage only; the build fails if the rendered config differs.
 
 ## Key Files
 
@@ -64,9 +70,11 @@ The base image provides all Jigasi runtime dependencies in `/usr/share/jigasi/li
 |------|---------|
 | `src/main/java/org/jitsi/jigasi/` | Main source — `JvbConference.java` (Colibri WebSocket + Jingle handling), `TranscriptionGateway.java`, `Transcriber.java` |
 | `src/main/java/net/java/sip/communicator/impl/protocol/jabber/` | XMPP protocol implementation |
+| `docker/entrypoint.sh` | Image entrypoint — renders `/config` from `/defaults` (port of upstream's `10-config`), then runs `custom-run.sh` |
 | `docker/custom-run.sh` | Runtime config script — ICE4J NAT harvester + transcription setup |
+| `docker/parity.env` | Placeholder env for the Dockerfile's config-parity check |
 | `jigasi-home/sip-communicator.properties` | Template for SIP/XMPP config (populated at runtime) |
-| `pom.xml` | Maven build config (Java 11 source/target) |
+| `pom.xml` | Maven build config (Java 17 release; dependency security pins in `dependencyManagement`) |
 
 ## Transcription Services
 
@@ -98,18 +106,22 @@ Set in `docker/custom-run.sh` and `jitsi-deploy/docker-compose.yml`:
 
 ## Deployment
 
-- **ECR**: `842697652860.dkr.ecr.eu-north-1.amazonaws.com/aiqlick-jigasi`
-- **CI/CD**: Push to `main` or `master` → build Docker → push to ECR → SSM redeploy on Jitsi EC2
-- **EC2**: t3.xlarge (4 vCPU, 16GB RAM), 16.16.21.64 (Elastic IP), 20GB EBS
-- **Container limits**: 1.5 GB memory, JVM heap 1024m (`JIGASI_MAX_MEMORY`)
-- **Ports**: UDP 20000-20050 (RTP media)
-- **Healthcheck**: `ls /proc/1/status` (container lacks curl/pgrep)
-- **Log rotation**: json-file driver, 10m max-size, 3 files
-- **Related repos**: `jitsi-deploy` (Docker Compose config), `background-tasks` (transcription WebSocket handler)
+- **Registry**: `ghcr.io/aiqlickproject/jigasi`, tagged `dev-<full commit sha>` (`latest` moves only on master and must never be pinned).
+  The ECR repository and the EC2 host this section used to describe are retired.
+- **CI/CD**: push to `master` (or a manual `ghcr-build.yml` dispatch on any branch) builds and pushes the image. **Nothing deploys
+  from this repo**: the running image is the pin in `aiqlick-meeting/k8s/jitsi/90-jigasi.yaml` (prod, namespace `meeting`); dev
+  (`meeting-dev`) is applied separately. Rolling it restarts Jigasi (Recreate strategy) and ends in-flight transcription sessions.
+- **Runs on**: the Swedish RKE2 cluster, as uid 10001 (`runAsNonRoot` compatible), no s6, no capabilities needed.
+- **Container limits**: 2Gi memory limit, JVM heap 1024m (`JIGASI_MAX_MEMORY`)
+- **Ports**: UDP 20000-20050 (RTP media), cluster-internal only
+- **Health**: the Kubernetes probes grep `/proc/net/tcp*` for an ESTABLISHED connection to the XMPP port (Jigasi's own
+  `/about/health` is a constant 200 in transcriber mode). The image must keep `sh`, `grep` and procfs.
+- **Related repos**: `aiqlick-meeting` (`k8s/jitsi/` manifests and the pin), `jitsi-deploy` (legacy Docker Compose config),
+  `background-tasks` (transcription WebSocket handler)
 
-### Runtime on EC2
+### Runtime
 
-Jigasi runs as one of 7 containers in `jitsi-deploy`:
+Jigasi is one of the Jitsi services (prosody, jicofo, jvb, web, coturn, jigasi):
 - Registers in `JigasiBrewery` MUC → Jicofo discovers it
 - Joins conferences as hidden participant (via `hidden.meet.jitsi` domain)
 - Streams audio to `wss://api.aiqlick.com/transcription/ws` via TranscribeService
