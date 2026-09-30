@@ -181,7 +181,7 @@ public class ColibriWebSocketClient
     /**
      * Called when the WebSocket connection is established.
      */
-    @OnWebSocketConnect
+    @OnWebSocketOpen
     public void onConnect(Session session)
     {
         logger.info("Colibri WebSocket onConnect");
@@ -341,11 +341,18 @@ public class ColibriWebSocketClient
 
         try
         {
-            wsSession.getRemote().sendString(message);
-            if (logger.isDebugEnabled())
-            {
-                logger.debug("Sent Colibri message: " + message);
-            }
+            // Jetty 12 sends asynchronously and reports the outcome through the callback; frames on one
+            // session are written in the order they were submitted, so ClientHello still precedes
+            // ReceiverVideoConstraints.
+            wsSession.sendText(message, Callback.from(
+                () ->
+                {
+                    if (logger.isDebugEnabled())
+                    {
+                        logger.debug("Sent Colibri message: " + message);
+                    }
+                },
+                cause -> logger.error("Failed to send Colibri message: " + cause.getMessage(), cause)));
         }
         catch (Exception e)
         {
