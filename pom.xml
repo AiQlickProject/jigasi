@@ -21,11 +21,99 @@
     <junit.version>5.8.2</junit.version>
     <smack.version>4.4.8-jitsi-4</smack.version>
     <jxmppVersion>1.0.3</jxmppVersion>
-    <!-- Match jicoco's jetty version. -->
+    <!-- Jetty 11 is end-of-life: 11.0.26 is the last release on Maven Central. See the security pins below. -->
     <jicoco.version>1.1-159-gf9c2712</jicoco.version>
-    <jetty.version>11.0.21</jetty.version>
+    <jetty.version>11.0.26</jetty.version>
     <oci-sdk.version>3.45.0</oci-sdk.version>
+    <bouncycastle.version>1.85</bouncycastle.version>
   </properties>
+
+  <!--
+    Security pins for the transitive dependencies that Trivy flags in this fork (2026-09-30).
+    Each is the lowest release that clears the findings and exists on Maven Central:
+      jackson 2.12.6.1 / 2.18.2 -> 2.18.11     (via jjwt-jackson and google-cloud-translate)
+      grpc 1.71.0               -> 1.75.0      (via google-cloud-speech; CVE-2025-55163 in grpc-netty-shaded)
+      BouncyCastle 1.78.1       -> 1.85        (via libjitsi and the OCI SDK; CVE-2025-14813, CVE-2026-8763)
+      commons-io 2.11.0         -> 2.14.0      (via jitsi-android-osgi)
+      dnsjava 3.5.2             -> 3.6.0       (via jitsi-util)
+      jetty 11.0.21             -> 11.0.26     (jicoco-jetty; 11.0.26 is the last Jetty 11 on Maven Central, so
+                                                jetty-http and jetty-security remain flagged until jicoco moves to Jetty 12)
+    NOTE: this fork's image copies only its own jigasi.jar onto jitsi/jigasi (see Dockerfile), so these
+    pins govern the build and test classpath, not the libraries that run in production; those come from
+    the base image. Keep them so a repository scan reflects what this project declares.
+    Managed here rather than in each dependency so a future bump of libjitsi or jicoco cannot
+    silently pull the old versions back in.
+  -->
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>com.fasterxml.jackson</groupId>
+        <artifactId>jackson-bom</artifactId>
+        <version>2.18.11</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+      <dependency>
+        <groupId>io.grpc</groupId>
+        <artifactId>grpc-bom</artifactId>
+        <version>1.75.0</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+      <dependency>
+        <groupId>org.eclipse.jetty</groupId>
+        <artifactId>jetty-bom</artifactId>
+        <version>${jetty.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+      <dependency>
+        <groupId>org.bouncycastle</groupId>
+        <artifactId>bcprov-jdk18on</artifactId>
+        <version>${bouncycastle.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.bouncycastle</groupId>
+        <artifactId>bcpkix-jdk18on</artifactId>
+        <version>${bouncycastle.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.bouncycastle</groupId>
+        <artifactId>bctls-jdk18on</artifactId>
+        <version>${bouncycastle.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.bouncycastle</groupId>
+        <artifactId>bcutil-jdk18on</artifactId>
+        <version>${bouncycastle.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.bouncycastle</groupId>
+        <artifactId>bcprov-jdk15to18</artifactId>
+        <version>${bouncycastle.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.bouncycastle</groupId>
+        <artifactId>bcpkix-jdk15to18</artifactId>
+        <version>${bouncycastle.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.bouncycastle</groupId>
+        <artifactId>bcutil-jdk15to18</artifactId>
+        <version>${bouncycastle.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>commons-io</groupId>
+        <artifactId>commons-io</artifactId>
+        <version>2.14.0</version>
+      </dependency>
+      <dependency>
+        <groupId>dnsjava</groupId>
+        <artifactId>dnsjava</artifactId>
+        <version>3.6.0</version>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
 
   <dependencies>
     <dependency>
