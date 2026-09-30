@@ -1,6 +1,10 @@
-#!/usr/bin/with-contenv bash
+#!/bin/bash
 # Custom Jigasi run script with ice4j and transcription configuration
 # This script configures ICE candidates and transcription settings
+#
+# Started by docker/entrypoint.sh (installed as /usr/local/bin/jigasi-run) as the unprivileged image user, after
+# the base configuration has been rendered into /config. There is no s6 here any more, so no `with-contenv` and
+# no `s6-setuidgid`: the process is already the user it should be, and `exec` makes Jigasi PID 1.
 
 # ==============================================================================
 # TRANSCRIPTION CONFIGURATION
@@ -133,9 +137,9 @@ echo "  ALLOWED_ADDRESSES: ${ICE4J_ALLOWED_ADDRESSES:-all}"
 echo "  BLOCKED_ADDRESSES: ${ICE4J_BLOCKED:-none}"
 echo "  JAVA_SYS_PROPS: ${JAVA_SYS_PROPS}"
 
-# Run jigasi with s6-setuidgid (drops to jigasi user)
+# Run jigasi (already the unprivileged image user; exec makes the JVM PID 1 so SIGTERM reaches it)
 if [ -n "$JIGASI_LOG_FILE" ]; then
-    exec s6-setuidgid jigasi $DAEMON $DAEMON_OPTS 2>&1 | tee $JIGASI_LOG_FILE
+    exec $DAEMON $DAEMON_OPTS 2>&1 | tee $JIGASI_LOG_FILE
 else
-    exec s6-setuidgid jigasi $DAEMON $DAEMON_OPTS
+    exec $DAEMON $DAEMON_OPTS
 fi

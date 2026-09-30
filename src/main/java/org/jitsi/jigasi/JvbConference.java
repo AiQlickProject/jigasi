@@ -17,6 +17,9 @@
  */
 package org.jitsi.jigasi;
 
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import io.opentelemetry.api.trace.Span;
 import net.java.sip.communicator.impl.protocol.jabber.*;
 import net.java.sip.communicator.service.protocol.*;
 import net.java.sip.communicator.service.protocol.event.*;
@@ -1170,6 +1173,8 @@ public class JvbConference
                 setPresenceStatus(gatewaySession.getDefaultInitStatus());
             }
 
+            callContext.traceEvent("muc.joined");
+
             gatewaySession.notifyJvbRoomJoined();
 
             if (websocketClient != null)
@@ -1259,6 +1264,8 @@ public class JvbConference
                                     logger.info("Lobby enabled by moderator! Will try to join lobby!");
 
                                     this.lobby.join();
+
+                                    this.callContext.traceEvent("lobby.joined");
 
                                     this.setLobbyEnabled(true);
 
@@ -1640,12 +1647,12 @@ public class JvbConference
     }
 
     /**
-     * @return an <tt>OrderedJsonObject</tt> instance that holds debug
+     * @return an <tt>ObjectNode</tt> instance that holds debug
      * information for this instance.
      */
-    public OrderedJsonObject getDebugState()
+    public ObjectNode getDebugState()
     {
-        OrderedJsonObject debugState = new OrderedJsonObject();
+        ObjectNode debugState = JsonNodeFactory.instance.objectNode();
         String meetingUrl = getMeetingUrl();
         if (StringUtils.isNotEmpty(meetingUrl))
         {
@@ -1845,6 +1852,7 @@ public class JvbConference
             if (jvbCall.getCallState() == CallState.CALL_IN_PROGRESS)
             {
                 logger.info("JVB conference call IN_PROGRESS.");
+                callContext.traceEvent("jvb.call.established");
                 gatewaySession.onJvbCallEstablished();
 
                 // Connect to Colibri WebSocket for EndpointMessageTransport (required for JVB audio forwarding)
@@ -2107,6 +2115,19 @@ public class JvbConference
         ConferenceIq focusInviteIQ = new ConferenceIq();
         focusInviteIQ.setRoom(roomIdentifier);
 
+        // propagate our tracing context so jicofo can join the trace, both
+        // as a traceparent extension and as a conference property in W3C
+        // format (ConferenceIqProvider only parses property children, so
+        // only the property form survives parsing today)
+        Span setupSpan = callContext.getSetupSpan();
+        if (setupSpan != null && setupSpan.getSpanContext().isValid())
+        {
+            TracingUtil.attachTraceParent(focusInviteIQ, setupSpan);
+            focusInviteIQ.addProperty(
+                "traceparent",
+                TracingUtil.toW3CHeader(setupSpan.getSpanContext()));
+        }
+
         if (JigasiBundleActivator.isSipVisitorsEnabled() && !this.isTranscriber)
         {
             focusInviteIQ.addProperty("visitors-version", "1");
@@ -2137,6 +2158,8 @@ public class JvbConference
             {
                 collector = getConnection().createStanzaCollectorAndSend(focusInviteIQ);
                 ConferenceIq res = collector.nextResultOrThrow();
+
+                callContext.traceEvent("focus.invited");
 
                 if (visitorsQueueServiceUrl != null)
                 {

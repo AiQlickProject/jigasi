@@ -85,39 +85,39 @@ jobs:
           context: .
           push: true
           provenance: false
+          # `latest` only from master: a branch dispatched for testing must not move it.
           tags: |
             ${{ env.IMAGE }}:dev-${{ steps.meta.outputs.sha }}
-            ${{ env.IMAGE }}:latest
+            ${{ github.ref_name == 'master' && format('{0}:latest', env.IMAGE) || '' }}
           # GHA cache, not local: the VM is discarded after each run, so a local
           # cache dir would be empty every time and the Maven stage — the whole
           # reason for caching — would rebuild from scratch on every push.
           cache-from: type=gha,scope=jigasi
           cache-to: type=gha,scope=jigasi,mode=max
 
-      # The base layer is upstream jitsi/jigasi; only the JAR and the run script
-      # come from this fork. So a base-only image would be indistinguishable from
-      # outside, and this asserts the fork's own artifacts are actually in there.
-      # It also checks `grep` and procfs exist, because the k8s liveness probe
-      # greps /proc/net/tcp for an ESTABLISHED XMPP connection and is fail-safe —
-      # if those are missing the probe passes silently and stops protecting
-      # anything.
-      - name: Verify the image contains the fork, not just the base
+      # The Dockerfile itself fails the build if the jar is not the fork (TranscribeService, ColibriWebSocketClient),
+      # if the native libraries are for another OS, or if the config it renders differs from upstream's. What is
+      # left to prove here is what only the finished image can show: it does not run as root (Kubernetes
+      # runAsNonRoot needs a numeric user), its run script is the fork's, it ships the patched Jetty from the
+      # pom, and the tools the k8s probes use exist. The probes grep /proc/net/tcp for an ESTABLISHED XMPP
+      # connection and are fail-safe, so if grep or procfs were missing they would pass silently and stop
+      # protecting anything.
+      - name: Verify the image is the fork, unprivileged, and probe-compatible
         run: |
           IMG="${{ env.IMAGE }}:dev-${{ steps.meta.outputs.sha }}"
           docker pull "$IMG"
           docker run --rm --entrypoint sh "$IMG" -c '
             set -e
-            unzip -l /usr/share/jigasi/jigasi.jar \
-              | grep -q "org/jitsi/jigasi/transcription/TranscribeService.class" \
-              || { echo "FAIL: TranscribeService missing — this is not the fork"; exit 1; }
-            unzip -l /usr/share/jigasi/jigasi.jar \
-              | grep -q "org/jitsi/jigasi/transcription/TranscribeWebsocket.class" \
-              || { echo "FAIL: TranscribeWebsocket missing"; exit 1; }
-            grep -q "transcribe.websocket_url" /etc/services.d/jigasi/run \
+            [ "$(id -u)" != "0" ] || { echo "FAIL: image runs as root"; exit 1; }
+            case "$(id -u)" in ""|*[!0-9]*) echo "FAIL: non-numeric user"; exit 1;; esac
+            grep -q "transcribe.websocket_url" /usr/local/bin/jigasi-run \
               || { echo "FAIL: run script is not the fork custom-run.sh"; exit 1; }
+            ls /usr/share/jigasi/lib | grep -Eq "^jetty-security-12\.0\.(3[6-9]|[4-9][0-9])\.jar$" \
+              || { echo "FAIL: patched Jetty (>= 12.0.36) is not in lib/"; ls /usr/share/jigasi/lib | grep jetty-security; exit 1; }
+            command -v tpl >/dev/null || { echo "FAIL: no tpl"; exit 1; }
             command -v grep >/dev/null || { echo "FAIL: no grep — liveness probe would silently pass"; exit 1; }
             test -r /proc/net/tcp || { echo "FAIL: no procfs — liveness probe would silently pass"; exit 1; }
-            echo "OK: fork artifacts present, probe dependencies present"
+            echo "OK: unprivileged (uid $(id -u)), fork run script, patched Jetty, probe dependencies present"
           '
 
       - name: Summary

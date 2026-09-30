@@ -76,7 +76,26 @@ public class VoskTranscriptionService
      */
     private String websocketUrl;
 
-    private final JSONParser jsonParser = new JSONParser();
+    /**
+     * A parser for the JSON replies from the Vosk server.
+     *
+     * <p>{@link JSONParser} is not thread-safe: it keeps mutable state
+     * ({@code Yylex lexer}, {@code status}, {@code handlerStatusStack}) in
+     * instance fields and mutates it during {@code parse()}. There is one
+     * {@link VoskTranscriptionService} but one
+     * {@link VoskWebsocketStreamingSession} per participant, and their
+     * {@code @OnWebSocketMessage} callbacks are dispatched concurrently on
+     * Jetty pool threads, so a single shared parser lets one participant's
+     * message corrupt another's parse.
+     *
+     * <p>Reusing a thread-confined parser is preferred over allocating one per
+     * message because {@code new JSONParser()} eagerly builds a {@code Yylex}
+     * holding a 16384-char buffer, and Vosk emits partial results several
+     * times a second per participant. {@code parse()} calls {@code reset()} on
+     * entry, so reuse on a confined thread is safe.
+     */
+    private final ThreadLocal<JSONParser> jsonParser
+            = ThreadLocal.withInitial(JSONParser::new);
 
     /**
      * Assigns the websocketUrl to use to websocketUrl by reading websocketUrlConfig;
@@ -254,7 +273,7 @@ public class VoskTranscriptionService
             this.session = null;
         }
 
-        @OnWebSocketConnect
+        @OnWebSocketOpen
         public void onConnect(Session session)
         {
             this.session = session;
@@ -283,7 +302,7 @@ public class VoskTranscriptionService
 
             boolean partial = true;
             String result = "";
-            JSONObject obj = (JSONObject)jsonParser.parse(msg);
+            JSONObject obj = (JSONObject)jsonParser.get().parse(msg);
             if (obj.containsKey("partial"))
             {
                 result = (String)obj.get("partial");
@@ -332,10 +351,10 @@ public class VoskTranscriptionService
                 if (sampleRate < 0)
                 {
                     sampleRate = request.getFormat().getSampleRate();
-                    session.getRemote().sendString("{\"config\" : {\"sample_rate\" : " + sampleRate + " }}");
+                    session.sendText("{\"config\" : {\"sample_rate\" : " + sampleRate + " }}", Callback.NOOP);
                 }
                 ByteBuffer audioBuffer = ByteBuffer.wrap(request.getAudio());
-                session.getRemote().sendBytes(audioBuffer);
+                session.sendBinary(audioBuffer, Callback.NOOP);
             }
             catch (Exception e)
             {
@@ -352,7 +371,7 @@ public class VoskTranscriptionService
         {
             try
             {
-                session.getRemote().sendString(EOF_MESSAGE);
+                session.sendText(EOF_MESSAGE, Callback.NOOP);
             }
             catch (Exception e)
             {
@@ -394,21 +413,14 @@ public class VoskTranscriptionService
             this.closeLatch.countDown(); // trigger latch
         }
 
-        @OnWebSocketConnect
+        @OnWebSocketOpen
         public void onConnect(Session session)
         {
-            try
-            {
-                AudioFormat format = request.getFormat();
-                session.getRemote().sendString("{\"config\" : {\"sample_rate\" : " + format.getSampleRate() + "}}");
-                ByteBuffer audioBuffer = ByteBuffer.wrap(request.getAudio());
-                session.getRemote().sendBytes(audioBuffer);
-                session.getRemote().sendString(EOF_MESSAGE);
-            }
-            catch (IOException e)
-            {
-                logger.error("Error to transcribe audio", e);
-            }
+            AudioFormat format = request.getFormat();
+            session.sendText("{\"config\" : {\"sample_rate\" : " + format.getSampleRate() + "}}", Callback.NOOP);
+            ByteBuffer audioBuffer = ByteBuffer.wrap(request.getAudio());
+            session.sendBinary(audioBuffer, Callback.NOOP);
+            session.sendText(EOF_MESSAGE, Callback.NOOP);
         }
 
         @OnWebSocketMessage
