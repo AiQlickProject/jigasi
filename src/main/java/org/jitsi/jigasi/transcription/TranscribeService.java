@@ -161,7 +161,9 @@ public class TranscribeService
             if (socket == null)
             {
                 logger.info("Creating a new websocket connection.");
-                socket = new TranscribeWebsocket(ctx.getLogger());
+                // The room travels as ?room= so the backend can file this
+                // connection under its meeting; the path id is a random UUID.
+                socket = new TranscribeWebsocket(ctx.getLogger(), roomId);
 
                 socket.connect();
 

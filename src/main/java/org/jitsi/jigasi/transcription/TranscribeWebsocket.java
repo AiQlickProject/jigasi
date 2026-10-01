@@ -111,6 +111,13 @@ public class TranscribeWebsocket
      */
     private final String connectionId = UUID.randomUUID().toString();
 
+    /**
+     * The room being transcribed (its MUC JID), sent as {@code ?room=} so the
+     * Transcribe service can tell which meeting this connection belongs to.
+     * May be {@code null}, in which case no room is sent.
+     */
+    private final String room;
+
     private final static String privateKey;
 
     private final static String privateKeyName;
@@ -160,16 +167,27 @@ public class TranscribeWebsocket
 
     public TranscribeWebsocket(Logger parentLogger)
     {
+        this(parentLogger, null);
+    }
+
+    /**
+     * @param parentLogger the parent logger.
+     * @param room the room being transcribed (MUC JID or plain room name), or
+     * {@code null} to connect without naming one.
+     */
+    public TranscribeWebsocket(Logger parentLogger, String room)
+    {
         logger = parentLogger.createChildLogger(TranscribeWebsocket.class.getName());
+        this.room = room;
     }
 
     /**
      * Creates a connection url by concatenating the websocket
-     * url with the Connection Id;
+     * url with the Connection Id, and the room as {@code ?room=}.
      */
     private void generateWebsocketUrl()
     {
-        websocketUrl = websocketUrlConfig + "/" + connectionId;
+        websocketUrl = TranscribeWebsocketUrl.build(websocketUrlConfig, connectionId, room);
         if (logger.isDebugEnabled())
         {
             logger.debug(" Transcribe URL: " + websocketUrl);
